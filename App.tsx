@@ -23,7 +23,7 @@ import {
 import { resolveBootRoute, BootRoute } from './client/src/lib/bootRoute';
 import { storage } from './client/src/lib/storage';
 import { auth } from './client/src/lib/auth';
-import { navigationRef, resetToLockEnter } from './client/src/lib/navigationRef';
+import { navigationRef, resetAfterSessionEnded } from './client/src/lib/navigationRef';
 import { RootStackParamList } from './client/src/types/navigation';
 import { ToastProvider } from './client/src/components/AppToast';
 import { AppPrivacyCover } from './client/src/components/AppPrivacyCover';
@@ -68,7 +68,7 @@ export default function App() {
         setPrivacyCoverVisible(false);
         const stillAuthed = await auth.onAppForeground();
         if (!stillAuthed) {
-          resetToLockEnter();
+          void resetAfterSessionEnded();
         } else if (auth.isAuthenticated()) {
           await storage.runAutoDeleteMaintenance();
         }

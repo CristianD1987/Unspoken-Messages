@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -7,13 +7,24 @@ import { RootStackParamList } from '../types/navigation';
 import { Wordmark } from '@/components/Wordmark';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { storage } from '@/lib/storage';
+import { useHardwareBack } from '@/hooks/useHardwareBack';
 import { colors, fonts, radii, spacing, typography } from '@/theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Intro'>;
 
 export default function IntroPage({ navigation }: Props) {
+  useHardwareBack(useCallback(() => true, []));
+
   const handleAcceptTerms = async () => {
     await storage.setTermsAccepted();
+    const appData = await storage.getAppData();
+    if (appData?.settings?.pinHash) {
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Lock', params: { mode: 'enter' } }],
+      });
+      return;
+    }
     navigation.replace('Onboarding');
   };
 

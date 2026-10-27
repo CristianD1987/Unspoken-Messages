@@ -4,9 +4,9 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types/navigation';
 import { AlertCircle, ChevronLeft } from 'lucide-react-native';
-import { useAppData } from '@/hooks/use-storage';
-import { auth } from '@/lib/auth';
 import { storage } from '@/lib/storage';
+import { resolveWithdrawCancelReturn } from '@/lib/withdrawConsent';
+import { WithdrawConsentSheet } from '@/components/sheets/WithdrawConsentSheet';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { LegalMarkdown } from '@/components/LegalMarkdown';
 import {
@@ -23,17 +23,44 @@ const LEGAL_PADDING = 24;
 
 export default function TermsPage({ navigation, route }: Props) {
   const insets = useSafeAreaInsets();
-  const { updateSettings } = useAppData();
   const requireAccept = route.params?.requireAccept === true;
   const [tab, setTab] = useState<LegalTab>('terms');
+  const [withdrawOpen, setWithdrawOpen] = useState(false);
 
   const handleWithdrawConsent = () => {
-    updateSettings({ onboardingCompleted: false });
-    auth.logout();
-    navigation.replace('Lock', { mode: 'enter' });
+    setWithdrawOpen(true);
   };
 
-  useHardwareBack(useCallback(() => requireAccept, [requireAccept]));
+  const beginWithdrawAfterConfirm = () => {
+    setWithdrawOpen(false);
+    const returnAfterWithdrawCancel = resolveWithdrawCancelReturn(
+      requireAccept,
+      route.params?.returnAfterWithdrawCancel
+    );
+    navigation.reset({
+      index: 0,
+      routes: [
+        {
+          name: 'Lock',
+          params: {
+            mode: 'enter',
+            intent: 'withdrawConsent',
+            returnAfterWithdrawCancel,
+          },
+        },
+      ],
+    });
+  };
+
+  useHardwareBack(
+    useCallback(() => {
+      if (withdrawOpen) {
+        setWithdrawOpen(false);
+        return true;
+      }
+      return requireAccept;
+    }, [requireAccept, withdrawOpen])
+  );
 
   const handleAccept = async () => {
     await storage.setTermsAccepted();
@@ -123,6 +150,12 @@ export default function TermsPage({ navigation, route }: Props) {
           </Pressable>
         </View>
       ) : null}
+
+      <WithdrawConsentSheet
+        visible={withdrawOpen}
+        onClose={() => setWithdrawOpen(false)}
+        onConfirm={beginWithdrawAfterConfirm}
+      />
     </SafeAreaView>
   );
 }

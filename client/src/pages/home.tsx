@@ -17,6 +17,7 @@ import { format } from 'date-fns';
 import { RootStackParamList } from '../types/navigation';
 import { auth } from '@/lib/auth';
 import { useAppData } from '@/hooks/use-storage';
+import { storage } from '@/lib/storage';
 import { useAppToast } from '@/components/AppToast';
 import { Wordmark } from '@/components/Wordmark';
 import { EncryptedAvatar } from '@/components/EncryptedAvatar';
@@ -70,9 +71,15 @@ export default function HomePage({ navigation }: Props) {
   );
 
   useEffect(() => {
-    if (!auth.isAuthenticated()) {
-      navigation.replace('Lock', { mode: 'enter' });
-    }
+    (async () => {
+      if (auth.isAuthenticated()) return;
+      const termsAccepted = await storage.areTermsAccepted();
+      if (!termsAccepted) {
+        navigation.reset({ index: 0, routes: [{ name: 'Intro' }] });
+      } else {
+        navigation.replace('Lock', { mode: 'enter' });
+      }
+    })();
   }, [navigation]);
 
   useEffect(() => {
