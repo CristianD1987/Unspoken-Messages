@@ -1,4 +1,7 @@
 node_modules
+.expo/
+.expo-test-build/
+.expo-test-build2/
 dist
 .DS_Store
 server/public

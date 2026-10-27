@@ -41,7 +41,9 @@
       "expo-contacts",
       "expo-local-authentication",
       "expo-image-picker",
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-asset",
+      "expo-font"
     ]
   }
 }

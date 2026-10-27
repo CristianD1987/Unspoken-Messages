@@ -1,5 +1,3 @@
-export * from "@shared/schema";
-
 export interface NavigationState {
   currentPage: string;
   previousPage?: string;

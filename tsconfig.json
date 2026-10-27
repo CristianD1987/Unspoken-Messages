@@ -17,6 +17,13 @@
     "**/*.tsx"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "server",
+    "shared",
+    "vite.config.ts",
+    "drizzle.config.ts",
+    "tailwind.config.ts",
+    "client/src/components/ui",
+    "client/src/main.tsx"
   ]
 }

@@ -9,10 +9,9 @@ import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import logoPath from "@assets/logo_portocaliu.png";
 import * as ImagePicker from 'expo-image-picker';
-import { AvatarColor } from '@/types';
+import type { AvatarColor } from '@/types';
 import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
-import AboutUnspokenPage from "@/pages/aboutunspoken";
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 
