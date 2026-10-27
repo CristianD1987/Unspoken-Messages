@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Delete, Fingerprint } from 'lucide-react-native';
+import { colors, typography } from '@/theme';
 
 interface KeypadProps {
   onNumberPress: (number: string) => void;
@@ -8,124 +9,93 @@ interface KeypadProps {
   onBiometric?: () => void;
   showBiometric?: boolean;
   disabled?: boolean;
-  style?: any;
-  buttonTextStyle?: any;
 }
 
 export function Keypad({
   onNumberPress,
   onDelete,
   onBiometric,
-  showBiometric = true,
+  showBiometric = false,
   disabled = false,
-  style,
-  buttonTextStyle,
 }: KeypadProps) {
   const numbers = [
-    ["1", "2", "3"],
-    ["4", "5", "6"],
-    ["7", "8", "9"],
+    ['1', '2', '3'],
+    ['4', '5', '6'],
+    ['7', '8', '9'],
   ];
 
   return (
-    <View style={[styles.container, style]}>
+    <View style={styles.container}>
       {numbers.map((row, rowIndex) => (
         <View key={rowIndex} style={styles.row}>
           {row.map((number) => (
             <TouchableOpacity
               key={number}
-              style={[styles.button, disabled && styles.buttonDisabled]}
+              style={styles.button}
               onPress={() => onNumberPress(number)}
               disabled={disabled}
               activeOpacity={0.7}
             >
-              <Text style={[styles.buttonText, buttonTextStyle, disabled && styles.textDisabled]}>
-                {number}
-              </Text>
+              <Text style={typography.keypadDigit}>{number}</Text>
             </TouchableOpacity>
           ))}
         </View>
       ))}
-      
-      {/* Bottom row */}
       <View style={styles.row}>
+        {showBiometric ? (
+          <TouchableOpacity
+            style={[styles.button, styles.transparent]}
+            onPress={onBiometric}
+            disabled={disabled}
+            activeOpacity={0.7}
+          >
+            <Fingerprint size={26} color={colors.accent} strokeWidth={1.6} />
+          </TouchableOpacity>
+        ) : (
+          <View style={[styles.button, styles.transparent]} />
+        )}
         <TouchableOpacity
-          style={[
-            styles.button,
-            (!showBiometric || disabled) && styles.invisible
-          ]}
-          onPress={onBiometric}
-          disabled={!showBiometric || disabled}
-          activeOpacity={0.7}
-        >
-          <Ionicons 
-            name="finger-print" 
-            size={24} 
-            color={disabled ? "#666666" : "#D49A6A"} 
-          />
-        </TouchableOpacity>
-        
-        <TouchableOpacity
-          style={[styles.button, disabled && styles.buttonDisabled]}
-          onPress={() => onNumberPress("0")}
+          style={styles.button}
+          onPress={() => onNumberPress('0')}
           disabled={disabled}
           activeOpacity={0.7}
         >
-          <Text style={[styles.buttonText, buttonTextStyle, disabled && styles.textDisabled]}>
-            0
-          </Text>
+          <Text style={typography.keypadDigit}>0</Text>
         </TouchableOpacity>
-        
         <TouchableOpacity
-          style={[styles.button, disabled && styles.buttonDisabled]}
+          style={[styles.button, styles.transparent]}
           onPress={onDelete}
           disabled={disabled}
           activeOpacity={0.7}
         >
-          <Ionicons 
-            name="backspace-outline" 
-            size={20} 
-            color={disabled ? "#666666" : "#A0A0A0"} 
-          />
+          <Delete size={22} color={colors.textMuted} strokeWidth={1.6} />
         </TouchableOpacity>
       </View>
     </View>
   );
 }
 
+const KEY = 76;
+
 const styles = StyleSheet.create({
   container: {
-    maxWidth: 300,
     alignSelf: 'center',
+    gap: 28,
   },
   row: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 10,
-    gap: 10,
+    gap: 16,
+    justifyContent: 'center',
   },
   button: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: '#2D2D2D',
+    width: KEY,
+    height: KEY,
+    borderRadius: KEY / 2,
+    backgroundColor: colors.surface1,
     justifyContent: 'center',
     alignItems: 'center',
-    marginHorizontal: 3,
   },
-  buttonDisabled: {
-    backgroundColor: '#1E1E1E',
-    opacity: 0.5,
-  },
-  buttonText: {
-    fontSize: 26,
-    fontWeight: '500',
-    color: '#F5F5F5',
-  },
-  textDisabled: {
-    color: '#666666',
-  },
-  invisible: {
-    opacity: 0,
+  transparent: {
+    backgroundColor: 'transparent',
   },
 });

@@ -1,6 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Animated, Linking, Platform } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import React from 'react';
+import { View, Text, StyleSheet, Linking } from 'react-native';
+import { Coffee } from 'lucide-react-native';
+import { BottomSheet } from '@/components/BottomSheet';
+import { PrimaryButton } from '@/components/PrimaryButton';
+import { colors, fonts, radii, spacing, typography } from '@/theme';
 
 interface DonationModalProps {
   isOpen: boolean;
@@ -8,166 +11,49 @@ interface DonationModalProps {
   messageCount: number;
 }
 
-export function DonationModal({ isOpen, onClose, messageCount }: DonationModalProps) {
-  const [slideAnim] = useState(new Animated.Value(-200));
-
-  useEffect(() => {
-    if (isOpen) {
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
-    } else {
-      Animated.timing(slideAnim, {
-        toValue: -200,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
-    }
-  }, [isOpen, slideAnim]);
-
+export function DonationModal({ isOpen, onClose }: DonationModalProps) {
   const handleDonate = () => {
-    Linking.openURL("https://buymeacoffee.com/unspokendonations");
+    Linking.openURL('https://buymeacoffee.com/unspokendonations');
     onClose();
   };
 
-  const handleClose = () => {
-    Animated.timing(slideAnim, {
-      toValue: -200,
-      duration: 300,
-      useNativeDriver: true,
-    }).start(() => {
-      onClose();
-    });
-  };
-
-  if (!isOpen) return null;
-
   return (
-    <View style={styles.container}>
-      <Animated.View 
-        style={[
-          styles.modal,
-          {
-            transform: [{ translateY: slideAnim }]
-          }
-        ]}
-      >
-        <View style={styles.content}>
-            <View style={styles.textContainer}>
-              <Text style={styles.title}>
-                Unspoken helped you?
-              </Text>
-              <Text style={styles.description}>
-                If this space brought you peace or clarity, consider supporting us.
-              </Text>
-            </View>
-          <View style={styles.buttonRow}>
-            <TouchableOpacity
-              onPress={handleDonate}
-              style={[styles.donateButton, styles.fullButton]}
-            >
-              <Text style={styles.donateButtonText}>Support Unspoken</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={handleClose}
-              style={[styles.laterButton, styles.fullButton]}
-            >
-              <Text style={styles.laterButtonText}>Maybe Later</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Animated.View>
-    </View>
+    <BottomSheet visible={isOpen} onClose={onClose}>
+      <View style={styles.tile}>
+        <Coffee size={28} color={colors.accent} strokeWidth={1.6} />
+      </View>
+      <Text style={styles.title}>Unspoken helped you?</Text>
+      <Text style={styles.body}>
+        If this space brought you peace or clarity, consider supporting us.
+      </Text>
+      <PrimaryButton
+        label="Support Unspoken"
+        onPress={handleDonate}
+        icon={<Coffee size={18} color={colors.accentInk} strokeWidth={1.6} />}
+      />
+    </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 50,
+  tile: {
+    width: 72,
+    height: 72,
+    borderRadius: radii.emptyTile,
+    backgroundColor: colors.accentSoft,
     alignItems: 'center',
-  },
-  modal: {
-    margin: 0,
-    marginTop: Platform.OS === 'ios' ? 48 : 0,
-    width: '100%',
+    justifyContent: 'center',
     alignSelf: 'center',
   },
-  content: {
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#2D2D2D',
-    borderRadius: 14,
-    paddingVertical: 14,
-    paddingHorizontal: 18,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.10,
-    shadowRadius: 2,
-    elevation: 2,
-    gap: 8,
-    minWidth: '100%',
-    maxWidth: '100%',
-  },
-  iconContainer: {
-    display: 'none',
-  },
-  textContainer: {
-    alignItems: 'center',
-    marginBottom: 6,
-    paddingHorizontal: 2,
-  },
   title: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  description: {
-    fontSize: 13,
-    color: '#FFFFFF',
-    opacity: 0.9,
-    marginTop: 2,
+    ...typography.cardTitle,
     textAlign: 'center',
+    marginTop: spacing.xl,
   },
-  buttonRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    marginTop: 4,
-    width: '100%',
-  },
-  fullButton: {
-    flex: 1,
-  },
-  donateButton: {
-    backgroundColor: '#D49A6A',
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  donateButtonText: {
-    color: '#1E1E1E',
-    fontSize: 15,
-    fontWeight: '500',
-  },
-  laterButton: {
-    backgroundColor: '#F3F3F3',
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  laterButtonText: {
-    color: '#1E1E1E',
-    fontSize: 15,
-    fontWeight: '500',
+  body: {
+    ...typography.preview,
+    textAlign: 'center',
+    lineHeight: 21,
+    marginBottom: spacing.md,
   },
 });

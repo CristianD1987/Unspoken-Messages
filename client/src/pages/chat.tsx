@@ -1,711 +1,664 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
   TextInput,
-  TouchableOpacity,
+  Pressable,
   StyleSheet,
   ScrollView,
   ActivityIndicator,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  Image
 } from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { RootStackParamList } from '../types/navigation';
-import { Ionicons } from '@expo/vector-icons';
-import { MessageBubble } from "@/components/message-bubble";
-import { Keypad } from "@/components/keypad";
-import { PinDots } from "@/components/pin-dots";
-import { DonationModal } from "@/components/donation-modal";
-import { useAppData } from "@/hooks/use-storage";
-import { useToast } from "@/hooks/use-toast";
-import { auth } from "@/lib/auth";
-import type { AvatarColor } from "@/types";
 import { useFocusEffect } from '@react-navigation/native';
+import { ChevronLeft, MoreHorizontal, ArrowUp } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
+import { format } from 'date-fns';
+import { RootStackParamList } from '../types/navigation';
+import { MessageBubble } from '@/components/message-bubble';
+import { DonationModal } from '@/components/donation-modal';
+import { useAppData } from '@/hooks/use-storage';
+import { useAppToast } from '@/components/AppToast';
+import { auth } from '@/lib/auth';
+import { EncryptedAvatar } from '@/components/EncryptedAvatar';
+import {
+  saveAvatarFromSourceUri,
+  deleteAvatarFile,
+  contactHasPhoto,
+} from '@/lib/avatars';
+import { HeartCheckIcon } from '@/components/HeartCheckIcon';
+import {
+  SheetType,
+  OptionsSheet,
+  RenameSheet,
+  ClosureSheet,
+  DeleteSheet,
+} from '@/components/sheets/ConversationSheets';
+import { getContactColorIndex, nextAvatarColor } from '@/lib/avatar';
+import { useHardwareBack } from '@/hooks/useHardwareBack';
+import {
+  MessageActionsSheet,
+  EditMessageSheet,
+  DeleteMessageSheet,
+  DeleteConversationSheet,
+} from '@/components/sheets/MessageSheets';
+import type { AvatarColor } from '@/types';
+import { colors, fonts, hairline, radii, spacing, typography } from '@/theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Chat'>;
 
 export default function ChatPage({ navigation, route }: Props) {
   const { contactId } = route.params;
-  const [message, setMessage] = useState("");
+  const insets = useSafeAreaInsets();
+  const scrollRef = useRef<ScrollView>(null);
+
+  const [draft, setDraft] = useState('');
+  const [focused, setFocused] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [renameDialogOpen, setRenameDialogOpen] = useState(false);
-  const [newContactName, setNewContactName] = useState("");
-  const [unlockDialogOpen, setUnlockDialogOpen] = useState(false);
-  const [unlockPin, setUnlockPin] = useState("");
   const [donationModalOpen, setDonationModalOpen] = useState(false);
-  const [optionsDialogOpen, setOptionsDialogOpen] = useState(false);
-  const scrollViewRef = useRef<ScrollView>(null);
+  const [sheet, setSheet] = useState<SheetType>(null);
+  const [renameVal, setRenameVal] = useState('');
+  const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
+  const [editMessageVal, setEditMessageVal] = useState('');
+  const [messageActionsOpen, setMessageActionsOpen] = useState(false);
+  const [editMessageOpen, setEditMessageOpen] = useState(false);
+  const [deleteMessageOpen, setDeleteMessageOpen] = useState(false);
 
-  const { data, addMessage, editMessage, getContactMessages, updateData, shouldShowDonationModal, markDonationPromptShown, reloadData, deleteMessage } = useAppData();
-  const { toast } = useToast();
+  const {
+    data,
+    addMessage,
+    editMessage,
+    deleteMessage,
+    deleteContact,
+    branchNewConversation,
+    getContactMessages,
+    updateData,
+    shouldShowDonationModal,
+    markDonationPromptShown,
+    reloadData,
+  } = useAppData();
+  const { showToast } = useAppToast();
 
-  useEffect(() => {
-    if (!auth.isAuthenticated()) {
-      navigation.replace('PinAuth');
-      return;
-    }
-    auth.extendSession();
-  }, [navigation]);
-
-  // Reload data when the chat page comes into focus
   useFocusEffect(
-    React.useCallback(() => {
+    useCallback(() => {
       reloadData();
     }, [reloadData])
   );
 
-  const contact = data?.contacts.find(c => c.id === contactId);
-  const conversation = data?.conversations.find(c => c.contactId === contactId);
-  const messages = getContactMessages(contactId || "");
-  const isClosed = conversation?.isClosed || false;
+  useEffect(() => {
+    (async () => {
+      if (!auth.isAuthenticated()) {
+        navigation.replace('Lock', { mode: 'enter' });
+      }
+    })();
+  }, [navigation]);
+
+  const contact = data?.contacts.find((c) => c.id === contactId);
+  const conversation = data?.conversations.find((c) => c.contactId === contactId);
+  const messages = getContactMessages(contactId);
+  const isClosed = conversation?.isClosed ?? false;
+  const contacts = data?.contacts ?? [];
+  const colorIndex = contact ? getContactColorIndex(contact, contacts) : 0;
+
+  const scrollToLatest = useCallback((animated = true) => {
+    scrollRef.current?.scrollToEnd({ animated });
+  }, []);
 
   useEffect(() => {
-    if (!contactId || typeof contactId !== 'string') {
-      navigation.navigate('Home');
-      return;
-    }
-  }, [contactId, navigation]);
+    scrollToLatest(true);
+  }, [messages, isClosed, scrollToLatest]);
 
-  useEffect(() => {
-    scrollViewRef.current?.scrollToEnd({ animated: true });
-  }, [messages]);
-
-  // Donation modal logic
   useEffect(() => {
     const { show } = shouldShowDonationModal();
-    if (show) {
-      setDonationModalOpen(true);
-    }
-  }, [data?.settings.totalMessagesSent]);
+    if (show) setDonationModalOpen(true);
+  }, [data?.settings.totalMessagesSent, shouldShowDonationModal]);
 
-  const handleSendMessage = async () => {
-    const trimmedMessage = message.trim();
-    if (!trimmedMessage || !contactId || isLoading) return;
+  const handleSend = async () => {
+    const text = draft.trim();
+    if (!text || isLoading || isClosed) return;
     setIsLoading(true);
+    setDraft('');
     try {
-      setMessage("");
-      await addMessage(contactId, trimmedMessage);
+      await addMessage(contactId, text);
       await reloadData();
-    } catch (error) {
-      toast({ title: "Error", description: "Failed to send message.", variant: "destructive" });
+    } catch {
+      showToast('Failed to send message');
+      setDraft(text);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const displayContact = contact || {
-    id: contactId,
-    name: "New Contact",
-    avatar: "?",
-    color: "from-blue-500 to-indigo-600",
-    imageUrl: undefined,
+  const showClosureCta =
+    !isClosed && messages.length > 0 && !draft.trim();
+
+  const closeSheet = () => setSheet(null);
+
+  useHardwareBack(
+    useCallback(() => {
+      if (donationModalOpen) {
+        setDonationModalOpen(false);
+        markDonationPromptShown();
+        return true;
+      }
+      if (deleteMessageOpen) {
+        setDeleteMessageOpen(false);
+        return true;
+      }
+      if (editMessageOpen) {
+        setEditMessageOpen(false);
+        return true;
+      }
+      if (messageActionsOpen) {
+        setMessageActionsOpen(false);
+        return true;
+      }
+      if (sheet) {
+        closeSheet();
+        return true;
+      }
+      return false;
+    }, [
+      sheet,
+      donationModalOpen,
+      deleteMessageOpen,
+      editMessageOpen,
+      messageActionsOpen,
+      markDonationPromptShown,
+    ])
+  );
+
+  const handleClosureAction = () => {
+    if (isClosed) return;
+    setSheet('closure');
   };
 
-  // Modal state for options
-  const openOptionsModal = () => setOptionsDialogOpen(true);
-  const closeOptionsModal = () => setOptionsDialogOpen(false);
-
-  // Delete all messages for this contact
-  const handleDeleteAllMessages = () => {
-    updateData(data => ({
-      ...data,
-      messages: data.messages.filter(m => m.contactId !== contactId),
-    }));
-    toast({ title: 'Messages Deleted', description: 'All messages have been deleted.' });
-    closeOptionsModal();
-  };
-
-  // Rename contact (reuse modal logic)
-  const handleRenameFromOptions = () => {
-    closeOptionsModal();
-    setRenameDialogOpen(true);
-  };
-
-  // Change avatar color
-  const handleChangeAvatar = () => {
-    if (!contact) return;
-    const colors: AvatarColor[] = [
-      "from-pink-500 to-rose-600",
-      "from-blue-500 to-indigo-600",
-      "from-purple-500 to-violet-600",
-      "from-green-500 to-emerald-600",
-      "from-orange-500 to-amber-600",
-      "from-red-500 to-pink-600",
-      "from-cyan-500 to-blue-600",
-      "from-violet-500 to-purple-600",
-    ];
-    const currentColorIndex = colors.indexOf(contact.color as AvatarColor);
-    const nextColorIndex = (currentColorIndex + 1) % colors.length;
-    const newColor = colors[nextColorIndex] as AvatarColor;
-    updateData(data => ({
-      ...data,
-      contacts: data.contacts.map(c =>
-        c.id === contact.id ? { ...c, color: newColor } : c
-      )
-    }));
-    toast({ title: 'Avatar Updated', description: 'Contact avatar color has been changed.' });
-    closeOptionsModal();
-  };
-
-  // Change avatar image
-  const handleUploadImage = async () => {
-    if (!contact) return;
+  const handleStartNewAfterClosure = async () => {
     try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: 'images',
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.8,
-      });
-      if (!result.canceled && result.assets[0].uri) {
-        updateData(data => ({
-          ...data,
-          contacts: data.contacts.map(c =>
-            c.id === contact.id ? { ...c, imageUrl: result.assets[0].uri } : c
-          )
-        }));
-        toast({ title: 'Success', description: 'Avatar image updated successfully.' });
-      }
-    } catch (error) {
-      toast({ title: 'Error', description: 'Failed to update avatar image.' });
+      const newContactId = await branchNewConversation(contactId);
+      navigation.replace('Chat', { contactId: newContactId });
+    } catch {
+      showToast('Could not start a new conversation');
     }
-    closeOptionsModal();
   };
 
-  // Remove avatar image
-  const handleRemovePicture = () => {
+  const confirmClosure = () => {
+    const closedOn = format(new Date(), 'd MMM');
+    updateData((d) => ({
+      ...d,
+      conversations: d.conversations.map((c) =>
+        c.contactId === contactId ? { ...c, isClosed: true, closedOn } : c
+      ),
+    }));
+    setSheet(null);
+  };
+
+  const confirmDelete = () => {
+    updateData((d) => ({
+      ...d,
+      messages: d.messages.filter((m) => m.contactId !== contactId),
+      conversations: d.conversations.map((c) =>
+        c.contactId === contactId
+          ? { ...c, lastMessage: undefined, lastMessageAt: undefined, messageCount: 0 }
+          : c
+      ),
+    }));
+    setSheet(null);
+    showToast('Messages deleted');
+  };
+
+  const handleRemovePicture = async () => {
+    if (contact?.avatarFile) {
+      await deleteAvatarFile(contact.avatarFile);
+    }
+    updateData((d) => ({
+      ...d,
+      contacts: d.contacts.map((c) =>
+        c.id === contactId ? { ...c, avatarFile: undefined, imageUrl: undefined } : c
+      ),
+    }));
+    setSheet(null);
+  };
+
+  const handleChangeAvatarColor = () => {
     if (!contact) return;
-    updateData(data => ({
-      ...data,
-      contacts: data.contacts.map(c =>
-        c.id === contact.id ? { ...c, imageUrl: undefined } : c
-      )
+    const newColor = nextAvatarColor(contact.color as AvatarColor);
+    updateData((d) => ({
+      ...d,
+      contacts: d.contacts.map((c) =>
+        c.id === contactId ? { ...c, color: newColor } : c
+      ),
     }));
-    toast({ title: 'Picture Removed', description: 'Avatar picture removed. Default avatar restored.' });
-    closeOptionsModal();
+    setSheet(null);
   };
 
-  // Mark conversation as closed
-  const handleClosure = () => {
-    updateData(data => ({
-      ...data,
-      conversations: data.conversations.map(conv =>
-        conv.contactId === contactId ? { ...conv, isClosed: true } : conv
-      )
-    }));
-    toast({ title: 'Conversation Closed', description: 'This conversation is now closed.' });
-    closeOptionsModal();
-  };
-
-  // Unlock conversation
-  const handleUnlock = () => {
-    setUnlockDialogOpen(true);
-    setUnlockPin("");
-  };
-
-  // Unlock PIN logic
-  useEffect(() => {
-    const tryUnlock = async () => {
-      if (unlockDialogOpen && unlockPin.length === 4) {
-        if (!contact) return;
-        const ok = await auth.authenticate(unlockPin);
-        if (ok) {
-          updateData(data => ({
-            ...data,
-            conversations: data.conversations.map(conv =>
-              conv.contactId === contactId ? { ...conv, isClosed: false } : conv
-            )
-          }));
-          setUnlockDialogOpen(false);
-          setUnlockPin("");
-          toast({ title: 'Conversation Unlocked', description: 'You can now continue this conversation.' });
-        } else {
-          toast({ title: 'Incorrect PIN', description: 'The PIN you entered is incorrect.', variant: 'destructive' });
-          setUnlockPin("");
-        }
+  const handleChangePicture = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: 'images',
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+    if (!result.canceled && result.assets[0]?.uri) {
+      try {
+        const fileName = await saveAvatarFromSourceUri(
+          result.assets[0].uri,
+          contact?.avatarFile
+        );
+        updateData((d) => ({
+          ...d,
+          contacts: d.contacts.map((c) =>
+            c.id === contactId
+              ? { ...c, avatarFile: fileName, imageUrl: undefined }
+              : c
+          ),
+        }));
+      } catch {
+        showToast('Could not save photo');
       }
-    };
-    tryUnlock();
-  }, [unlockPin, unlockDialogOpen]);
+    }
+    setSheet(null);
+  };
 
-  // --- Modal for renaming contact ---
-  const renderRenameModal = () => (
-    renameDialogOpen && (
-      <View style={styles.modalOverlay}>
-        <View style={styles.optionsModalContent}>
-          <Text style={styles.modalTitle}>Rename Contact</Text>
-          <TextInput
-            style={styles.input}
-            value={newContactName}
-            onChangeText={setNewContactName}
-            maxLength={32}
-            placeholder="Enter new name"
-            placeholderTextColor="#A0A0A0"
-            autoFocus
-          />
-          <View style={{ flexDirection: 'row', gap: 12, width: '100%' }}>
-            <TouchableOpacity
-              style={[styles.optionsCancelButton, { flex: 1, borderWidth: 1, borderColor: '#383838' }]}
-              onPress={() => {
-                setRenameDialogOpen(false);
-                setNewContactName("");
-              }}
-            >
-              <Text style={styles.optionsCancelButtonText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.saveButton, (!newContactName.trim()) && styles.saveButtonDisabled, { flex: 1 }]}
-              onPress={() => {
-                if (!contact || !newContactName.trim()) return;
-                updateData(data => ({
-                  ...data,
-                  contacts: data.contacts.map(c =>
-                    c.id === contact.id
-                      ? { ...c, name: newContactName.trim(), avatar: newContactName.trim().charAt(0).toUpperCase() }
-                      : c
-                  )
-                }));
-                toast({
-                  title: "Contact Renamed",
-                  description: `Contact renamed to ${newContactName.trim()}`,
-                });
-                setRenameDialogOpen(false);
-                setNewContactName("");
-              }}
-              disabled={!newContactName.trim()}
-            >
-              <Text style={styles.saveButtonText}>Save</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+  if (!contact) {
+    return (
+      <View style={styles.loading}>
+        <ActivityIndicator color={colors.accent} />
       </View>
-    )
-  );
+    );
+  }
 
-  // --- Modal for options ---
-  const renderOptionsModal = () => (
-    optionsDialogOpen && (
-      <View style={styles.modalOverlay}>
-        <View style={styles.optionsModalContent}>
-          <Text style={styles.modalTitle}>Conversation Options</Text>
-          <TouchableOpacity style={styles.optionsButton} onPress={handleDeleteAllMessages}>
-            <Ionicons name="trash" size={18} color="#FF5A5A" style={{ marginRight: 10 }} />
-            <Text style={[styles.optionsButtonText, { color: '#FF5A5A' }]}>Delete All Messages</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.optionsButton} onPress={handleRenameFromOptions}>
-            <Ionicons name="pencil" size={18} color="#D49A6A" style={{ marginRight: 10 }} />
-            <Text style={styles.optionsButtonText}>Rename</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.optionsButton} onPress={handleUploadImage}>
-            <Ionicons name="image" size={18} color="#D49A6A" style={{ marginRight: 10 }} />
-            <Text style={styles.optionsButtonText}>Change Picture</Text>
-          </TouchableOpacity>
-          {contact?.imageUrl && (
-            <TouchableOpacity style={styles.optionsButton} onPress={handleRemovePicture}>
-              <Ionicons name="close-circle" size={18} color="#D49A6A" style={{ marginRight: 10 }} />
-              <Text style={styles.optionsButtonText}>Remove Picture</Text>
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity style={styles.optionsButton} onPress={handleClosure}>
-            <Ionicons name="lock-closed" size={18} color="#D49A6A" style={{ marginRight: 10 }} />
-            <Text style={styles.optionsButtonText}>Closure</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.optionsCancelButton} onPress={closeOptionsModal}>
-            <Text style={styles.optionsCancelButtonText}>Cancel</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    )
-  );
+  const closedLabel =
+    conversation?.closedOn && String(conversation.closedOn).trim()
+      ? `CLOSURE · ${conversation.closedOn}`
+      : 'CLOSURE';
 
-  // Editing message logic
-  const inputRef = useRef<TextInput>(null);
-  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const composerBottomInset = focused ? 8 : insets.bottom + 8;
 
-  // When editing, set input and focus
-  const handleEditMessage = (msgId: string, content: string) => {
-    setEditingMessageId(msgId);
-    setMessage(content);
-    setTimeout(() => {
-      inputRef.current?.focus();
-    }, 100);
-  };
-
-  // Save edited message
-  const handleSaveEdit = async () => {
-    if (editingMessageId && message.trim()) {
-      await editMessage(editingMessageId, message.trim());
-      setEditingMessageId(null);
-      setMessage("");
-    }
-  };
-
-  // Cancel editing
-  const handleCancelEdit = () => {
-    setEditingMessageId(null);
-    setMessage("");
-  };
-
-  // Helper to map AvatarColor to real color value
-  const getAvatarBgColor = (color: AvatarColor | undefined) => {
-    switch (color) {
-      case 'from-pink-500 to-rose-600': return '#EC4899';
-      case 'from-blue-500 to-indigo-600': return '#3B82F6';
-      case 'from-purple-500 to-violet-600': return '#8B5CF6';
-      case 'from-green-500 to-emerald-600': return '#10B981';
-      case 'from-orange-500 to-amber-600': return '#F59E42';
-      case 'from-red-500 to-pink-600': return '#EF4444';
-      case 'from-cyan-500 to-blue-600': return '#06B6D4';
-      case 'from-violet-500 to-purple-600': return '#7C3AED';
-      default: return '#D49A6A';
-    }
-  };
-
-  const handleDeleteMessage = (messageId: string) => {
-    deleteMessage(messageId);
-    toast({ title: 'Message Deleted', description: 'The message has been deleted.' });
-    if (editingMessageId === messageId) {
-      setEditingMessageId(null);
-      setMessage("");
-    }
-  };
-
-  return (
-    <KeyboardAvoidingView
-      style={[
-        styles.container,
-        Platform.OS === 'android' && { paddingBottom: 25 }
+  const messageList = (
+    <ScrollView
+      ref={scrollRef}
+      style={styles.messages}
+      contentContainerStyle={[
+        styles.messagesContent,
+        messages.length === 0 && !isClosed ? styles.messagesEmpty : null,
       ]}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={0}
+      keyboardShouldPersistTaps="handled"
     >
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.navigate('Home')} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color="#F5F5F5" />
-        </TouchableOpacity>
-        {/* Avatar */}
-        <TouchableOpacity onPress={handleUploadImage} activeOpacity={0.7}>
-          {displayContact.imageUrl ? (
-            <Image
-              source={{ uri: displayContact.imageUrl }}
-              style={styles.headerAvatar}
-            />
-          ) : (
-            <View style={[styles.headerAvatar, { backgroundColor: getAvatarBgColor(displayContact.color) }]}> 
-              <Text style={styles.headerAvatarText}>{displayContact.avatar}</Text>
-            </View>
-          )}
-        </TouchableOpacity>
-        {/* Name and subtitle */}
-        <View style={styles.headerTextContainer}>
-          <Text style={styles.contactName}>{displayContact.name}</Text>
-          <Text style={styles.headerSubtitle}>Therapeutic Conversation</Text>
+      {messages.length === 0 && !isClosed ? (
+        <View style={styles.emptyChat}>
+          <EncryptedAvatar
+            name={contact.name}
+            colorIndex={colorIndex}
+            avatarFile={contact.avatarFile}
+            size={72}
+          />
+          <Text style={typography.chatIntro}>Start your conversation with {contact.name}</Text>
+          <Text style={styles.emptySub}>
+            This is a safe space to express your thoughts and feelings.
+          </Text>
         </View>
-        {/* Three dots button */}
-        <TouchableOpacity style={styles.headerMoreButton} onPress={openOptionsModal}>
-          <Ionicons name="ellipsis-vertical" size={22} color="#A0A0A0" />
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView ref={scrollViewRef} style={styles.messagesContainer} contentContainerStyle={styles.messagesContent}>
-        {isClosed ? (
-          <View style={{ alignItems: 'center', marginTop: 20 }}>
-            {messages.map((msg) => (
-              <MessageBubble
-                key={msg.id}
-                message={msg}
-                onEdit={handleEditMessage}
-                isEditMode={!isClosed}
-                isEditing={editingMessageId === msg.id}
-                onDelete={!isClosed ? handleDeleteMessage : undefined}
-              />
-            ))}
-            <View style={{ backgroundColor: '#2D2D2D', padding: 20, borderRadius: 20, alignItems: 'center', marginTop: 20 }}>
-              <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: '#22C55E', justifyContent: 'center', alignItems: 'center', marginBottom: 16 }}>
-                <Text style={{ color: '#fff', fontSize: 24 }}>✓</Text>
-              </View>
-              <Text style={{ color: '#F5F5F5', fontSize: 18, marginBottom: 4 }}>We are glad you found closure</Text>
-              <Text style={{ color: '#A0A0A0', fontSize: 14 }}>This therapeutic conversation has reached its closure.</Text>
-            </View>
-            {/* Unlock button */}
-            <TouchableOpacity style={styles.unlockButton} onPress={handleUnlock}>
-              <Ionicons name="lock-open" size={20} color="#1E1E1E" style={{ marginRight: 8 }} />
-              <Text style={styles.unlockButtonText}>Unlock</Text>
-            </TouchableOpacity>
-          </View>
-        ) : messages.length === 0 ? (
-          <View style={{ alignItems: 'center', paddingVertical: 48 }}>
-            <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: '#D49A6A', justifyContent: 'center', alignItems: 'center', marginBottom: 16 }}>
-              <Text style={{ color: '#1E1E1E', fontSize: 24 }}>{displayContact.avatar}</Text>
-            </View>
-            <Text style={{ fontSize: 18, color: '#F5F5F5', marginBottom: 8 }}>Start your conversation with {displayContact.name}</Text>
-            <Text style={{ color: '#A0A0A0', fontSize: 14 }}>This is a safe space to express your thoughts and feelings.</Text>
-          </View>
-        ) : (
-          messages.map((msg) => (
+      ) : (
+        <>
+          {messages.map((msg) => (
             <MessageBubble
               key={msg.id}
               message={msg}
-              onEdit={handleEditMessage}
-              isEditMode={!isClosed}
-              isEditing={editingMessageId === msg.id}
-              onDelete={!isClosed ? handleDeleteMessage : undefined}
+              disabled={isClosed}
+              onLongPress={() => {
+                if (isClosed) return;
+                setActiveMessageId(msg.id);
+                setMessageActionsOpen(true);
+              }}
             />
-          ))
-        )}
-      </ScrollView>
-
-      {!isClosed && (
-        <>
-          <View style={styles.inputContainer}>
-            <TextInput
-              ref={inputRef}
-              style={styles.input}
-              value={message}
-              onChangeText={setMessage}
-              placeholder="Type your message..."
-              placeholderTextColor="#A0A0A0"
-              multiline
-              maxLength={2000}
-              returnKeyType={editingMessageId ? 'done' : 'default'}
-              onSubmitEditing={editingMessageId ? handleSaveEdit : undefined}
-            />
-            {editingMessageId ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center', height: '100%' }}>
-                <TouchableOpacity
-                  style={[styles.sendButton, (!message.trim() || isLoading) && styles.sendButtonDisabled, { width: 40, height: 40, borderRadius: 20 }]}
-                  onPress={handleSaveEdit}
-                  disabled={!message.trim() || isLoading}
-                >
-                  <Ionicons name="checkmark" size={18} color="#1E1E1E" />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.sendButton, { backgroundColor: '#A0A0A0', marginLeft: 6, width: 40, height: 40, borderRadius: 20 }]}
-                  onPress={handleCancelEdit}
-                >
-                  <Ionicons name="close" size={18} color="#1E1E1E" />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.sendButton, { backgroundColor: '#EF4444', marginLeft: 6, width: 40, height: 40, borderRadius: 20 }]}
-                  onPress={() => handleDeleteMessage(editingMessageId)}
-                >
-                  <Ionicons name="trash" size={18} color="#fff" />
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <TouchableOpacity
-                style={[styles.sendButton, (!message.trim() || isLoading) && styles.sendButtonDisabled]}
-                onPress={handleSendMessage}
-                disabled={!message.trim() || isLoading}
-              >
-                {isLoading ? <ActivityIndicator color="#1E1E1E" size="small" /> : <Ionicons name="send" size={20} color="#1E1E1E" />}
-              </TouchableOpacity>
-            )}
-          </View>
-          <View style={{ height: 25, backgroundColor: '#232323' }} />
+          ))}
+          {isClosed ? (
+            <View style={styles.closureDividerRow}>
+              <View style={hairline} />
+              <Text style={styles.closureDividerText}>{closedLabel}</Text>
+              <View style={hairline} />
+            </View>
+          ) : null}
         </>
       )}
+    </ScrollView>
+  );
 
-      {unlockDialogOpen && (
-        <View style={styles.unlockDialog}>
-          <Text style={styles.unlockTitle}>Enter PIN to Unlock</Text>
-          <PinDots length={4} filled={unlockPin.length} />
-          <View style={{ height: 24 }} />
-          <Keypad onNumberPress={(n) => {
-            if (unlockPin.length < 4) setUnlockPin(prev => prev + n);
-          }} onDelete={() => setUnlockPin(prev => prev.slice(0, -1))} />
-        </View>
+  return (
+    <View style={styles.flex}>
+      <View style={[styles.header, { paddingTop: insets.top + spacing.md }]}>
+        <Pressable style={styles.headerBtn} onPress={() => navigation.navigate('Home')}>
+          <ChevronLeft size={22} color={colors.text} strokeWidth={1.8} />
+        </Pressable>
+        <Pressable
+          style={styles.headerCenter}
+          onPress={() => setSheet('options')}
+        >
+          <EncryptedAvatar
+            name={contact.name}
+            colorIndex={colorIndex}
+            avatarFile={contact.avatarFile}
+            size={40}
+          />
+          <View style={styles.headerText}>
+            <Text style={styles.headerName}>{contact.name}</Text>
+            <Text style={styles.headerSub}>Private · never sent</Text>
+          </View>
+        </Pressable>
+        <Pressable style={styles.headerRound} onPress={() => setSheet('options')}>
+          <MoreHorizontal size={20} color={colors.textMuted} strokeWidth={1.6} />
+        </Pressable>
+      </View>
+      <View style={hairline} />
+
+      {isClosed ? (
+        <>
+          {messageList}
+          <View style={[styles.closedBlock, { paddingBottom: insets.bottom + 8 }]}>
+            <Text style={styles.closedFooter}>This conversation has reached closure.</Text>
+            <Pressable style={styles.newConvoPill} onPress={handleStartNewAfterClosure}>
+              <Text style={styles.newConvoPillText}>
+                Start a new conversation with {contact.name}
+              </Text>
+            </Pressable>
+          </View>
+        </>
+      ) : (
+        <KeyboardAvoidingView behavior="padding" style={styles.flex}>
+          {messageList}
+          {showClosureCta ? (
+            <Pressable style={styles.closureCta} onPress={() => setSheet('closure')}>
+              <HeartCheckIcon size={18} />
+              <Text style={styles.closureCtaText}>Said everything? Find closure</Text>
+            </Pressable>
+          ) : null}
+          <View style={[styles.composer, { paddingBottom: composerBottomInset }]}>
+            <TextInput
+              style={[styles.input, focused && styles.inputFocused]}
+              value={draft}
+              onChangeText={setDraft}
+              placeholder="Write what you couldn't say…"
+              placeholderTextColor={colors.textFaint}
+              multiline
+              maxLength={2000}
+              onFocus={() => {
+                setFocused(true);
+                scrollToLatest(true);
+              }}
+              onBlur={() => setFocused(false)}
+              returnKeyType="send"
+              blurOnSubmit
+              onSubmitEditing={handleSend}
+            />
+            <Pressable
+              style={[
+                styles.sendBtn,
+                { backgroundColor: draft.trim() ? colors.accent : colors.disabledSend },
+              ]}
+              onPress={handleSend}
+              disabled={!draft.trim() || isLoading}
+            >
+              {isLoading ? (
+                <ActivityIndicator color={colors.accentInk} size="small" />
+              ) : (
+                <ArrowUp
+                  size={20}
+                  color={draft.trim() ? colors.accentInk : colors.textFaint}
+                  strokeWidth={2}
+                />
+              )}
+            </Pressable>
+          </View>
+        </KeyboardAvoidingView>
       )}
 
-      {donationModalOpen && (
-        <DonationModal
-          isOpen={donationModalOpen}
-          onClose={() => {
-            setDonationModalOpen(false);
-            markDonationPromptShown();
-          }}
-          messageCount={data?.settings.totalMessagesSent || 0}
-        />
-      )}
+      <OptionsSheet
+        sheet={sheet}
+        onClose={closeSheet}
+        targetContact={contact}
+        allContacts={contacts}
+        isClosed={isClosed}
+        onRename={() => {
+          setRenameVal(contact.name);
+          setSheet('rename');
+        }}
+        onChangePicture={handleChangePicture}
+        onRemovePicture={handleRemovePicture}
+        onChangeAvatarColor={handleChangeAvatarColor}
+        hasPhoto={contactHasPhoto(contact)}
+        onClosureAction={handleClosureAction}
+        onDelete={() => setSheet('delete')}
+        onDeleteConversation={() => setSheet('deleteConversation')}
+      />
+      <RenameSheet
+        sheet={sheet}
+        onClose={closeSheet}
+        targetContact={contact}
+        allContacts={contacts}
+        renameVal={renameVal}
+        onRenameChange={setRenameVal}
+        onSave={() => {
+          if (!renameVal.trim()) return;
+          updateData((d) => ({
+            ...d,
+            contacts: d.contacts.map((c) =>
+              c.id === contactId
+                ? { ...c, name: renameVal.trim(), avatar: renameVal.trim().charAt(0).toUpperCase() }
+                : c
+            ),
+          }));
+          setSheet(null);
+        }}
+      />
+      <ClosureSheet
+        sheet={sheet}
+        onClose={closeSheet}
+        targetContact={contact}
+        allContacts={contacts}
+        onConfirm={confirmClosure}
+      />
+      <DeleteSheet
+        sheet={sheet}
+        onClose={closeSheet}
+        targetContact={contact}
+        allContacts={contacts}
+        onConfirm={confirmDelete}
+      />
 
-      {/* Rename Modal */}
-      {renderRenameModal()}
-      {/* Options Modal */}
-      {renderOptionsModal()}
-    </KeyboardAvoidingView>
+      <DeleteConversationSheet
+        visible={sheet === 'deleteConversation'}
+        onClose={closeSheet}
+        name={contact.name}
+        onConfirm={() => {
+          void deleteContact(contactId);
+          closeSheet();
+          navigation.navigate('Home');
+        }}
+      />
+
+      <MessageActionsSheet
+        visible={messageActionsOpen}
+        onClose={() => setMessageActionsOpen(false)}
+        onEdit={() => {
+          const msg = messages.find((m) => m.id === activeMessageId);
+          if (!msg) return;
+          setEditMessageVal(msg.content);
+          setMessageActionsOpen(false);
+          setEditMessageOpen(true);
+        }}
+        onDelete={() => {
+          setMessageActionsOpen(false);
+          setDeleteMessageOpen(true);
+        }}
+      />
+      <EditMessageSheet
+        visible={editMessageOpen}
+        onClose={() => setEditMessageOpen(false)}
+        value={editMessageVal}
+        onChange={setEditMessageVal}
+        onSave={() => {
+          if (!activeMessageId || !editMessageVal.trim()) return;
+          editMessage(activeMessageId, editMessageVal.trim());
+          setEditMessageOpen(false);
+          setActiveMessageId(null);
+        }}
+      />
+      <DeleteMessageSheet
+        visible={deleteMessageOpen}
+        onClose={() => setDeleteMessageOpen(false)}
+        onConfirm={() => {
+          if (activeMessageId) deleteMessage(activeMessageId);
+          setDeleteMessageOpen(false);
+          setActiveMessageId(null);
+          showToast('Message deleted');
+        }}
+      />
+
+      <DonationModal
+        isOpen={donationModalOpen}
+        onClose={() => {
+          setDonationModalOpen(false);
+          markDonationPromptShown();
+        }}
+        messageCount={data?.settings.totalMessagesSent || 0}
+      />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#1E1E1E' },
+  flex: { flex: 1, backgroundColor: colors.bg },
+  loading: {
+    flex: 1,
+    backgroundColor: colors.bg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 24,
-    paddingTop: 48,
-    paddingBottom: 12,
-    minHeight: 85,
-    backgroundColor: '#232323',
-    borderBottomWidth: 1,
-    borderBottomColor: '#232323',
+    paddingHorizontal: spacing.section,
+    paddingBottom: spacing.xl,
+    gap: spacing.md,
   },
-  backButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#2D2D2D',
-    justifyContent: 'center',
+  headerBtn: {
+    width: 44,
+    height: 44,
     alignItems: 'center',
-    marginRight: 16,
-  },
-  headerAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#D49A6A',
     justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 16,
   },
-  headerAvatarText: {
-    color: '#1E1E1E',
-    fontSize: 22,
-    fontWeight: '700',
-  },
-  headerTextContainer: {
+  headerCenter: {
     flex: 1,
-    justifyContent: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xl,
     minWidth: 0,
   },
-  headerSubtitle: {
-    color: '#A0A0A0',
-    fontSize: 13,
-    marginTop: 2,
+  headerText: { flex: 1, minWidth: 0 },
+  headerName: {
+    fontFamily: fonts.sansMedium,
+    fontSize: 16,
+    color: colors.text,
   },
-  contactName: { fontSize: 18, fontWeight: '600', color: '#F5F5F5' },
-  messagesContainer: { flex: 1 },
-  messagesContent: { padding: 16 },
-  inputContainer: {
+  headerSub: { ...typography.captionSmall },
+  headerRound: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.surface1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  messages: { flex: 1 },
+  messagesContent: { paddingHorizontal: spacing.screen, paddingVertical: spacing.xl },
+  messagesEmpty: { flexGrow: 1, justifyContent: 'center' },
+  emptyChat: { alignItems: 'center', gap: spacing.xl, paddingHorizontal: spacing.section },
+  emptySub: {
+    ...typography.preview,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  closureDividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xl,
+    marginVertical: spacing.xl,
+  },
+  closureDividerText: {
+    ...typography.badge,
+    color: colors.closure,
+  },
+  closureCta: {
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    height: 40,
+    paddingHorizontal: spacing.xl,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.closureBorder,
+    backgroundColor: colors.closureSoft,
+    marginBottom: spacing.md,
+  },
+  closureCtaText: {
+    fontFamily: fonts.sansMedium,
+    fontSize: 14,
+    color: colors.closure,
+  },
+  composer: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    paddingHorizontal: 16,
-    paddingBottom: 0,
-    paddingTop: 24,
-    backgroundColor: '#232323',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    marginTop: 8,
+    paddingHorizontal: spacing.section,
+    paddingTop: spacing.md,
+    gap: spacing.md,
   },
   input: {
     flex: 1,
-    minHeight: 56,
-    maxHeight: 140,
-    backgroundColor: '#2D2D2D',
-    borderRadius: 10,
-    paddingHorizontal: 18,
-    paddingVertical: 16,
-    marginRight: 12,
-    color: '#F5F5F5',
-    fontSize: 17,
+    minHeight: 50,
+    maxHeight: 120,
+    backgroundColor: colors.surface1,
+    borderRadius: radii.pill,
     borderWidth: 1,
-    borderColor: '#383838',
-  },
-  sendButton: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#D49A6A',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  sendButtonDisabled: { opacity: 0.5 },
-  unlockDialog: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#1E1E1E',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
-  },
-  unlockTitle: { fontSize: 20, fontWeight: '600', color: '#F5F5F5', marginBottom: 24 },
-  headerMoreButton: {
-    padding: 8,
-    marginLeft: 16,
-  },
-  optionsModalContent: {
-    backgroundColor: '#232323',
-    borderRadius: 20,
-    padding: 24,
-    width: '90%',
-    maxWidth: 350,
-    alignItems: 'stretch',
-  },
-  optionsButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    borderColor: colors.border,
+    paddingHorizontal: spacing.xl,
     paddingVertical: 14,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    marginBottom: 8,
-    backgroundColor: '#2D2D2D',
+    color: colors.text,
+    fontFamily: fonts.sans,
+    fontSize: 15.5,
   },
-  optionsButtonText: {
-    color: '#F5F5F5',
-    fontSize: 16,
-    fontWeight: '500',
+  inputFocused: {
+    borderColor: colors.accent,
   },
-  optionsCancelButton: {
-    marginTop: 8,
-    backgroundColor: 'transparent',
+  sendBtn: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
     alignItems: 'center',
-    paddingVertical: 12,
-    borderRadius: 10,
-  },
-  optionsCancelButtonText: {
-    color: '#A0A0A0',
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  modalOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
+  },
+  closedBlock: {
+    paddingHorizontal: spacing.screen,
+    paddingTop: spacing.xl,
+    gap: spacing.xl,
+  },
+  closedFooter: {
+    ...typography.preview,
+    textAlign: 'center',
+  },
+  newConvoPill: {
+    minHeight: 44,
+    borderRadius: radii.pill,
+    backgroundColor: colors.surface1,
     alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.xl,
   },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#F5F5F5',
-    marginBottom: 24,
-  },
-  saveButton: {
-    backgroundColor: '#D49A6A',
-    padding: 12,
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-  saveButtonDisabled: { opacity: 0.5 },
-  saveButtonText: {
-    color: '#F5F5F5',
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  unlockButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#D49A6A',
-    borderRadius: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    marginTop: 24,
-  },
-  unlockButtonText: {
-    color: '#1E1E1E',
-    fontSize: 16,
-    fontWeight: '600',
+  newConvoPillText: {
+    fontFamily: fonts.sansMedium,
+    fontSize: 15,
+    color: colors.accent,
+    textAlign: 'center',
   },
 });

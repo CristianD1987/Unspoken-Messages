@@ -1,739 +1,388 @@
-import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Switch, TextInput, Alert, Share, Platform, KeyboardAvoidingView, Linking } from 'react-native';
+import React, { useCallback, useState } from 'react';
+import {
+  View,
+  Text,
+  Pressable,
+  StyleSheet,
+  ScrollView,
+  Linking,
+} from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { RootStackParamList } from '../types/navigation';
-import { Ionicons } from '@expo/vector-icons';
-import { useAppData } from "@/hooks/use-storage";
-import { auth } from "@/lib/auth";
-import { storage } from "@/lib/storage";
-import { useToast } from "@/hooks/use-toast";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  Upload,
+  Coffee,
+} from 'lucide-react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
+import { RootStackParamList } from '../types/navigation';
+import { useAppData } from '@/hooks/use-storage';
+import { storage } from '@/lib/storage';
+import { useAppToast } from '@/components/AppToast';
+import { Toggle } from '@/components/Toggle';
+import { PrimaryButton } from '@/components/PrimaryButton';
+import { ExportBackupSheet, ImportBackupSheet } from '@/components/sheets/BackupSheets';
+import { AutoDeleteConfirmSheet } from '@/components/sheets/AutoDeleteConfirmSheet';
+import { CrisisSupportSheet } from '@/components/sheets/CrisisSupportSheet';
+import { useHardwareBack } from '@/hooks/useHardwareBack';
+import { seedLegacyAppData } from '@/lib/devLegacySeed';
+import { colors, fonts, hairline, radii, spacing, typography } from '@/theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 
 export default function SettingsPage({ navigation }: Props) {
-  const { data, updateSettings, resetDonationCounter, clearAllData } = useAppData();
-  const { toast } = useToast();
-  
-  const [pinChangeOpen, setPinChangeOpen] = useState(false);
-  const [resetPinOpen, setResetPinOpen] = useState(false);
-  const [currentPin, setCurrentPin] = useState("");
-  const [newPin, setNewPin] = useState("");
-  const [confirmPin, setConfirmPin] = useState("");
-  const [aboutModalOpen, setAboutModalOpen] = useState(false);
-  const [isChangingPin, setIsChangingPin] = useState(false);
+  const insets = useSafeAreaInsets();
+  const { data, updateSettings, reloadData } = useAppData();
+  const { showToast } = useAppToast();
 
-  // PIN and password modal state
-  const [pinModalVisible, setPinModalVisible] = useState<false | 'export' | 'import'>(false);
-  const [pinInput, setPinInput] = useState("");
-  const [pinError, setPinError] = useState("");
-  const [passwordModalVisible, setPasswordModalVisible] = useState<false | 'export' | 'import'>(false);
-  const [passwordInput, setPasswordInput] = useState("");
-  const [passwordError, setPasswordError] = useState("");
-  const [pendingFileContent, setPendingFileContent] = useState<string | null>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importError, setImportError] = useState('');
+  const [pendingFile, setPendingFile] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [devTapCount, setDevTapCount] = useState(0);
+  const [autoDeleteConfirmOpen, setAutoDeleteConfirmOpen] = useState(false);
+  const [crisisOpen, setCrisisOpen] = useState(false);
 
-  const handleBack = () => {
-    navigation.navigate('Home');
-  };
-
-  const handleBiometricToggle = (enabled: boolean) => {
-    updateSettings({ biometricEnabled: enabled });
-    toast({
-      title: "Settings Updated",
-      description: `Biometric authentication ${enabled ? "enabled" : "disabled"}.`,
-    });
-  };
-
-  const handleAutoDeleteToggle = (enabled: boolean) => {
-    updateSettings({ autoDeleteEnabled: enabled });
-    toast({
-      title: "Settings Updated",
-      description: `Auto-delete messages ${enabled ? "enabled" : "disabled"}.`,
-    });
-  };
-
-  const openPinChangeModal = () => {
-    setCurrentPin("");
-    setNewPin("");
-    setConfirmPin("");
-    setIsChangingPin(false);
-    setPinChangeOpen(true);
-  };
-
-  const closePinChangeModal = () => {
-    setPinChangeOpen(false);
-    setCurrentPin("");
-    setNewPin("");
-    setConfirmPin("");
-    setIsChangingPin(false);
-  };
-
-  const handlePinChange = async () => {
-    if (!currentPin || !newPin || !confirmPin) {
-      toast({
-        title: "Missing Information",
-        description: "Please fill in all fields.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (newPin !== confirmPin) {
-      toast({
-        title: "PIN Mismatch",
-        description: "New PIN and confirmation do not match.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (newPin.length !== 4 || !/^\d{4}$/.test(newPin)) {
-      toast({
-        title: "Invalid PIN",
-        description: "PIN must be exactly 4 digits.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setIsChangingPin(true);
-    try {
-      const success = await auth.changePin(currentPin, newPin);
-      if (success) {
-        closePinChangeModal();
-        toast({
-          title: "PIN Changed",
-          description: "Your PIN has been updated successfully.",
-        });
-        setTimeout(() => {
-          setIsChangingPin(false);
-          navigation.replace('PinAuth');
-        }, 300);
-      } else {
-        toast({
-          title: "Incorrect PIN",
-          description: "Current PIN is incorrect.",
-          variant: "destructive",
-        });
-        setIsChangingPin(false);
+  useHardwareBack(
+    useCallback(() => {
+      if (exportOpen) {
+        setExportOpen(false);
+        return true;
       }
-    } catch (error) {
-      setIsChangingPin(false);
-      toast({
-        title: "Error",
-        description: "Failed to change PIN. Please try again.",
-        variant: "destructive",
-      });
-    }
-  };
+      if (importOpen) {
+        setImportOpen(false);
+        setPendingFile(null);
+        setImportError('');
+        return true;
+      }
+      return false;
+    }, [exportOpen, importOpen])
+  );
 
-  // Show PIN modal before export/import
-  const startExportWithPin = () => {
-    setPinInput("");
-    setPinError("");
-    setPinModalVisible('export');
-  };
-  const startImportWithPin = async () => {
-    // Pick file first, then ask for PIN
+  const startImport = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
         type: 'text/plain',
         copyToCacheDirectory: true,
       });
       let uri: string | undefined;
-      if ('assets' in result && result.assets && result.assets.length > 0) {
-        uri = result.assets[0].uri;
-      } else if ('uri' in result) {
-        uri = (result as any).uri;
-      }
-      if (uri) {
-        const fileContent = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.UTF8 });
-        setPendingFileContent(fileContent);
-        setPinInput("");
-        setPinError("");
-        setPinModalVisible('import');
-      }
-    } catch (error) {
-      toast({
-        title: 'Import Failed',
-        description: 'Failed to import data. Please try again.',
-        variant: 'destructive',
+      if ('assets' in result && result.assets?.length) uri = result.assets[0].uri;
+      else if ('uri' in result) uri = (result as { uri: string }).uri;
+      if (!uri) return;
+      const fileContent = await FileSystem.readAsStringAsync(uri, {
+        encoding: FileSystem.EncodingType.UTF8,
       });
+      setPendingFile(fileContent);
+      setImportError('');
+      setImportOpen(true);
+    } catch {
+      showToast('Import failed');
     }
   };
 
-  // Handle PIN submit
-  const handlePinSubmit = async () => {
-    setIsProcessing(true);
-    setPinError("");
-    const isValid = await auth.authenticate(pinInput);
-    if (isValid) {
-      setPinModalVisible(false);
-      setPasswordInput("");
-      setPasswordError("");
-      setTimeout(() => setPasswordModalVisible(pinModalVisible), 200); // show password modal for same op
-    } else {
-      setPinError("Incorrect PIN. Please try again.");
-    }
-    setIsProcessing(false);
-  };
-
-  // Handle password submit for export/import
-  const handlePasswordSubmit = async () => {
-    setIsProcessing(true);
-    setPasswordError("");
-    if (!passwordInput) {
-      setPasswordError("Password required");
-      setIsProcessing(false);
-      return;
-    }
-    if (passwordModalVisible === 'export') {
-      try {
-        const exportedData = await storage.exportDataWithPassword(passwordInput);
-        const fileUri = FileSystem.cacheDirectory + 'unspoken-backup.txt';
-        await FileSystem.writeAsStringAsync(fileUri, exportedData, { encoding: FileSystem.EncodingType.UTF8 });
-        await Sharing.shareAsync(fileUri, {
-          mimeType: 'text/plain',
-          dialogTitle: 'Export Unspoken Backup',
-          UTI: 'public.text',
-        });
-        setPasswordModalVisible(false);
-        toast({ title: 'Export Successful', description: 'Backup exported.' });
-      } catch (error) {
-        setPasswordError("Export failed. Try again.");
-      }
-    } else if (passwordModalVisible === 'import') {
-      try {
-        if (!pendingFileContent) throw new Error('No file selected');
-        await storage.importDataWithPassword(pendingFileContent, passwordInput);
-        setPasswordModalVisible(false);
-        setPendingFileContent(null);
-        toast({ title: 'Import Successful', description: 'Your backup has been imported and your data is now available in the app.' });
-      } catch (err) {
-        setPasswordError('Could not decrypt or import the backup. Wrong password?');
-      }
-    }
-    setIsProcessing(false);
-  };
-
-  const handleExportData = async () => {
+  const runExport = async (password: string) => {
+    setBusy(true);
     try {
-      const exportedData = await storage.exportData();
+      const exportedData = await storage.exportDataWithPassword(password);
       const fileUri = FileSystem.cacheDirectory + 'unspoken-backup.txt';
-      await FileSystem.writeAsStringAsync(fileUri, exportedData, { encoding: FileSystem.EncodingType.UTF8 });
+      await FileSystem.writeAsStringAsync(fileUri, exportedData, {
+        encoding: FileSystem.EncodingType.UTF8,
+      });
       await Sharing.shareAsync(fileUri, {
         mimeType: 'text/plain',
         dialogTitle: 'Export Unspoken Backup',
         UTI: 'public.text',
       });
-    } catch (error) {
-      toast({
-        title: "Export Failed",
-        description: "Failed to export data. Please try again.",
-        variant: "destructive",
-      });
+      setExportOpen(false);
+      showToast('Backup file exported');
+    } catch {
+      showToast('Export failed');
+    } finally {
+      setBusy(false);
     }
   };
 
-  const handleImportData = async () => {
+  const runImport = async (password: string) => {
+    if (!pendingFile) return;
+    setBusy(true);
+    setImportError('');
     try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: 'text/plain',
-        copyToCacheDirectory: true,
-      });
-      // For compatibility with different expo-document-picker versions
-      let uri: string | undefined;
-      if ('assets' in result && result.assets && result.assets.length > 0) {
-        uri = result.assets[0].uri;
-      } else if ('uri' in result) {
-        uri = (result as any).uri;
-      }
-      if (uri) {
-        const fileContent = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.UTF8 });
-        try {
-          await storage.importData(fileContent);
-          toast({
-            title: 'Import Successful',
-            description: 'Your backup has been imported.',
-          });
-        } catch (err) {
-          toast({
-            title: 'Import Failed',
-            description: 'Could not decrypt or import the backup. This may happen if the backup was created on a different device or after reinstalling the app.',
-            variant: 'destructive',
-          });
-        }
-      }
-    } catch (error) {
-      toast({
-        title: 'Import Failed',
-        description: 'Failed to import data. Please try again.',
-        variant: 'destructive',
-      });
+      await storage.importDataWithPassword(pendingFile, password);
+      await reloadData();
+      setImportOpen(false);
+      setPendingFile(null);
+      showToast('Data imported');
+    } catch {
+      setImportError('Wrong password. Try again.');
+    } finally {
+      setBusy(false);
     }
   };
 
-  const handleTerms = () => {
-    navigation.navigate('Terms');
-  };
-
-  const handleResetPin = async () => {
-    if (!currentPin || !newPin || !confirmPin) {
-      toast({
-        title: "Missing Information",
-        description: "Please fill in all fields.",
-        variant: "destructive",
-      });
-      return;
+  const onDevSeedPress = async () => {
+    if (!__DEV__) return;
+    const next = devTapCount + 1;
+    setDevTapCount(next);
+    if (next >= 5) {
+      setDevTapCount(0);
+      await seedLegacyAppData();
+      await reloadData();
+      showToast('Legacy dev seed written');
     }
-    if (newPin !== confirmPin) {
-      toast({
-        title: "PIN Mismatch",
-        description: "New PIN and confirmation do not match.",
-        variant: "destructive",
-      });
-      return;
-    }
-    if (newPin.length !== 4 || !/^\d{4}$/.test(newPin)) {
-      toast({
-        title: "Invalid PIN",
-        description: "PIN must be exactly 4 digits.",
-        variant: "destructive",
-      });
-      return;
-    }
-    const isValid = await auth.authenticate(currentPin);
-    if (!isValid) {
-      toast({
-        title: "Incorrect PIN",
-        description: "Current PIN is incorrect.",
-        variant: "destructive",
-      });
-      return;
-    }
-    await auth.setPin(newPin);
-    toast({
-      title: "PIN Reset",
-      description: "Your PIN has been reset successfully.",
-    });
-    setResetPinOpen(false);
-    setCurrentPin("");
-    setNewPin("");
-    setConfirmPin("");
-  };
-
-  const handleSupport = () => {
-    const url = 'https://buymeacoffee.com/unspokendonations';
-    Linking.openURL(url);
   };
 
   return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.headerChatLike}>
-        <TouchableOpacity onPress={handleBack} style={styles.backButtonChatLike}>
-          <Ionicons name="arrow-back" size={24} color="#F5F5F5" />
-        </TouchableOpacity>
-        <View style={styles.headerTextContainerChatLike}>
-          <Text style={styles.titleChatLike}>Settings</Text>
-        </View>
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      <View style={[styles.header, { paddingTop: insets.top > 0 ? 0 : spacing.md }]}>
+        <Pressable style={styles.back} onPress={() => navigation.navigate('Home')}>
+          <ChevronLeft size={22} color={colors.text} strokeWidth={1.8} />
+        </Pressable>
+        <Text style={[typography.screenTitle, styles.screenTitle]}>Settings</Text>
       </View>
 
-      {/* Settings Content */}
-      <ScrollView style={styles.content}>
-        {/* Security Section */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Ionicons name="shield-outline" size={20} color="#D49A6A" />
-            <Text style={styles.sectionTitle}>Security</Text>
-          </View>
-          
-          <View style={styles.settingItem}>
-            <View style={styles.settingInfo}>
-              <Text style={styles.settingTitle}>Biometric Authentication</Text>
-              <Text style={styles.settingDescription}>Use fingerprint or Face ID</Text>
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        <Text style={styles.sectionLabel}>SECURITY</Text>
+        <View style={styles.card}>
+          <View style={styles.rowBetween}>
+            <View style={styles.rowInfo}>
+              <Text style={styles.rowTitle}>Biometric authentication</Text>
+              <Text style={styles.rowSub}>Use fingerprint or Face ID</Text>
             </View>
-            <Switch
-              value={data?.settings.biometricEnabled || false}
-              onValueChange={handleBiometricToggle}
-              trackColor={{ false: '#767577', true: '#D49A6A' }}
-              thumbColor={data?.settings.biometricEnabled ? '#f4f3f4' : '#f4f3f4'}
+            <Toggle
+              variant="settings"
+              value={!!data?.settings.biometricEnabled}
+              onValueChange={(v) => updateSettings({ biometricEnabled: v })}
             />
           </View>
-
-          <TouchableOpacity
-            style={styles.settingButton}
-            onPress={openPinChangeModal}
+          <View style={[hairline, styles.cardHairline]} />
+          <View style={styles.rowBetween}>
+            <View style={styles.rowInfo}>
+              <Text style={styles.rowTitle}>Auto-delete messages</Text>
+              <Text style={styles.rowSub}>
+                Remove messages after {data?.settings.autoDeleteDays ?? 30} days
+              </Text>
+            </View>
+            <Toggle
+              variant="settings"
+              value={!!data?.settings.autoDeleteEnabled}
+              onValueChange={(v) => {
+                if (v) {
+                  setAutoDeleteConfirmOpen(true);
+                } else {
+                  updateSettings({ autoDeleteEnabled: false, autoDeleteNeedsReconfirm: false });
+                }
+              }}
+            />
+          </View>
+          <View style={[hairline, styles.cardHairline]} />
+          <Pressable
+            style={styles.linkRow}
+            onPress={() => navigation.navigate('Lock', { mode: 'change' })}
           >
-            <Text style={styles.settingButtonText}>Change PIN</Text>
-            <Ionicons name="chevron-forward" size={16} color="#A0A0A0" />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.settingButton}
-            onPress={startExportWithPin}
-          >
-            <Text style={styles.settingButtonText}>Export Data</Text>
-            <Ionicons name="download-outline" size={16} color="#A0A0A0" />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.settingButton}
-            onPress={startImportWithPin}
-          >
-            <Text style={styles.settingButtonText}>Import Data</Text>
-            <Ionicons name="cloud-upload-outline" size={16} color="#A0A0A0" />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.settingButton}
-            onPress={handleTerms}
-          >
-            <Text style={styles.settingButtonText}>Terms & Privacy</Text>
-            <Ionicons name="document-text-outline" size={16} color="#A0A0A0" />
-          </TouchableOpacity>
+            <Text style={styles.linkText}>Change PIN</Text>
+            <ChevronRight size={18} color={colors.textFaint} strokeWidth={1.6} />
+          </Pressable>
         </View>
 
-        {/* Wellness/Benefits Section */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Ionicons name="heart-outline" size={20} color="#D49A6A" />
-            <Text style={styles.sectionTitle}>Therapeutic Benefits</Text>
-          </View>
-          <Text style={styles.settingDescription}>
-            UNSPOKEN offers a safe space for emotional expression, helping you process thoughts and feelings through therapeutic writing. Messages remain private, supporting your mental wellness journey without pressure or judgment.
-          </Text>
+        {__DEV__ ? (
+          <Pressable onPress={onDevSeedPress}>
+            <Text style={styles.sectionLabel}>YOUR DATA</Text>
+          </Pressable>
+        ) : (
+          <Text style={styles.sectionLabel}>YOUR DATA</Text>
+        )}
+        <Text style={styles.dataCaption}>
+          Backups are the only way to move your conversations to a new phone.
+        </Text>
+        <View style={styles.grid}>
+          <Pressable style={styles.tile} onPress={() => setExportOpen(true)}>
+            <Download size={22} color={colors.accent} strokeWidth={1.6} />
+            <Text style={styles.tileText}>Export data</Text>
+          </Pressable>
+          <Pressable style={styles.tile} onPress={startImport}>
+            <Upload size={22} color={colors.accent} strokeWidth={1.6} />
+            <Text style={styles.tileText}>Import data</Text>
+          </Pressable>
         </View>
 
-        {/* Support Section */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Ionicons name="help-circle-outline" size={20} color="#D49A6A" />
-            <Text style={styles.sectionTitle}>Support & Development</Text>
-          </View>
-          <Text style={styles.settingDescription}>
-            If you find UNSPOKEN helpful, consider supporting its development. Your feedback and support help us grow!
+        <Text style={styles.sectionLabel}>ABOUT</Text>
+        <View style={styles.card}>
+          <Text style={typography.cardTitle}>Therapeutic benefits</Text>
+          <Text style={styles.aboutBody}>
+            Everything you write stays encrypted on this device. Unspoken does not collect or send
+            your data. Unspoken offers a safe space for emotional expression, helping you process thoughts and
+            feelings through therapeutic writing. Messages remain private, supporting your mental
+            wellness journey without pressure or judgment.
           </Text>
-          <TouchableOpacity style={styles.supportButton} onPress={handleSupport}>
-            <Ionicons name="cafe-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
-            <Text style={styles.supportButtonText}>Support Unspoken</Text>
-          </TouchableOpacity>
+          <View style={[hairline, styles.cardHairline]} />
+          <Pressable style={styles.linkRow} onPress={() => setCrisisOpen(true)}>
+            <Text style={styles.linkText}>Need support right now?</Text>
+            <ChevronRight size={18} color={colors.textFaint} strokeWidth={1.6} />
+          </Pressable>
+          <View style={[hairline, styles.cardHairline]} />
+          <Pressable style={styles.linkRow} onPress={() => navigation.navigate('Terms')}>
+            <Text style={styles.linkText}>Terms & Privacy</Text>
+            <ChevronRight size={18} color={colors.textFaint} strokeWidth={1.6} />
+          </Pressable>
+        </View>
+
+        <View style={styles.supportCard}>
+          <Text style={styles.supportTitle}>Support & development</Text>
+          <Text style={styles.supportBody}>
+            If you find Unspoken helpful, consider supporting its development. Your feedback and
+            support help us grow!
+          </Text>
+          <PrimaryButton
+            label="Support Unspoken"
+            onPress={() => Linking.openURL('https://buymeacoffee.com/unspokendonations')}
+            icon={<Coffee size={18} color={colors.accentInk} strokeWidth={1.6} />}
+            style={{ marginTop: spacing.xl }}
+          />
         </View>
       </ScrollView>
 
-      {/* PIN Modal */}
-      {pinModalVisible && (
-        <View style={styles.modal}>
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ width: '100%', maxWidth: 400 }}>
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>Enter PIN</Text>
-              <TextInput
-                style={styles.input}
-                value={pinInput}
-                onChangeText={setPinInput}
-                maxLength={4}
-                keyboardType="numeric"
-                secureTextEntry
-                placeholder="Enter your 4-digit PIN"
-                placeholderTextColor="#A0A0A0"
-                editable={!isProcessing}
-              />
-              {pinError ? <Text style={{ color: '#D49A6A', marginTop: 8 }}>{pinError}</Text> : null}
-              <View style={styles.modalButtons}>
-                <TouchableOpacity style={styles.cancelButton} onPress={() => setPinModalVisible(false)} disabled={isProcessing}>
-                  <Text style={styles.cancelButtonText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.saveButton, (!pinInput || isProcessing) && styles.saveButtonDisabled]} onPress={handlePinSubmit} disabled={!pinInput || isProcessing}>
-                  <Text style={styles.saveButtonText}>{isProcessing ? 'Verifying...' : 'Continue'}</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </KeyboardAvoidingView>
-        </View>
-      )}
+      <CrisisSupportSheet visible={crisisOpen} onClose={() => setCrisisOpen(false)} />
 
-      {/* Password Modal */}
-      {passwordModalVisible && (
-        <View style={styles.modal}>
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ width: '100%', maxWidth: 400 }}>
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>{passwordModalVisible === 'export' ? 'Set Export Password' : 'Enter Import Password'}</Text>
-              <TextInput
-                style={styles.input}
-                value={passwordInput}
-                onChangeText={setPasswordInput}
-                secureTextEntry
-                placeholder={passwordModalVisible === 'export' ? 'Choose a password for your backup' : 'Enter password for backup'}
-                placeholderTextColor="#A0A0A0"
-                editable={!isProcessing}
-              />
-              {passwordError ? <Text style={{ color: '#D49A6A', marginTop: 8 }}>{passwordError}</Text> : null}
-              <View style={styles.modalButtons}>
-                <TouchableOpacity style={styles.cancelButton} onPress={() => { setPasswordModalVisible(false); setPendingFileContent(null); }} disabled={isProcessing}>
-                  <Text style={styles.cancelButtonText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.saveButton, (!passwordInput || isProcessing) && styles.saveButtonDisabled]} onPress={handlePasswordSubmit} disabled={!passwordInput || isProcessing}>
-                  <Text style={styles.saveButtonText}>{isProcessing ? (passwordModalVisible === 'export' ? 'Exporting...' : 'Importing...') : (passwordModalVisible === 'export' ? 'Export' : 'Import')}</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </KeyboardAvoidingView>
-        </View>
-      )}
-
-      {/* Change PIN Modal */}
-      {pinChangeOpen && (
-        <View style={styles.modal}>
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ width: '100%', maxWidth: 400 }}>
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>Change PIN</Text>
-              <View style={styles.inputContainer}>
-                <Text style={styles.inputLabel}>Current PIN</Text>
-                <TextInput
-                  style={styles.input}
-                  value={currentPin}
-                  onChangeText={setCurrentPin}
-                  maxLength={4}
-                  keyboardType="numeric"
-                  secureTextEntry
-                  placeholder="Enter current PIN"
-                  placeholderTextColor="#A0A0A0"
-                />
-              </View>
-              <View style={styles.inputContainer}>
-                <Text style={styles.inputLabel}>New PIN</Text>
-                <TextInput
-                  style={styles.input}
-                  value={newPin}
-                  onChangeText={setNewPin}
-                  maxLength={4}
-                  keyboardType="numeric"
-                  secureTextEntry
-                  placeholder="Enter new PIN"
-                  placeholderTextColor="#A0A0A0"
-                />
-              </View>
-              <View style={styles.inputContainer}>
-                <Text style={styles.inputLabel}>Confirm New PIN</Text>
-                <TextInput
-                  style={styles.input}
-                  value={confirmPin}
-                  onChangeText={setConfirmPin}
-                  maxLength={4}
-                  keyboardType="numeric"
-                  secureTextEntry
-                  placeholder="Confirm new PIN"
-                  placeholderTextColor="#A0A0A0"
-                />
-              </View>
-              <View style={styles.modalButtons}>
-                <TouchableOpacity style={styles.cancelButton} onPress={closePinChangeModal}>
-                  <Text style={styles.cancelButtonText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.saveButton, ((!currentPin || !newPin || !confirmPin) || isChangingPin) && styles.saveButtonDisabled]}
-                  onPress={handlePinChange}
-                  disabled={!currentPin || !newPin || !confirmPin || isChangingPin}
-                >
-                  <Text style={styles.saveButtonText}>{isChangingPin ? 'Saving...' : 'Save'}</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </KeyboardAvoidingView>
-        </View>
-      )}
-    </View>
+      <ExportBackupSheet
+        visible={exportOpen}
+        onClose={() => setExportOpen(false)}
+        onExport={runExport}
+        loading={busy}
+      />
+      <ImportBackupSheet
+        visible={importOpen}
+        onClose={() => {
+          setImportOpen(false);
+          setPendingFile(null);
+          setImportError('');
+        }}
+        onImport={runImport}
+        loading={busy}
+        error={importError}
+      />
+      <AutoDeleteConfirmSheet
+        visible={autoDeleteConfirmOpen}
+        days={data?.settings.autoDeleteDays ?? 30}
+        onClose={() => {
+          updateSettings({ autoDeleteEnabled: false, autoDeleteNeedsReconfirm: false });
+          setAutoDeleteConfirmOpen(false);
+        }}
+        onConfirm={() => {
+          updateSettings({ autoDeleteEnabled: true, autoDeleteNeedsReconfirm: false });
+          setAutoDeleteConfirmOpen(false);
+        }}
+      />
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#1E1E1E',
+  safe: { flex: 1, backgroundColor: colors.bg },
+  header: {
+    paddingHorizontal: spacing.screen,
+    paddingBottom: spacing.md,
   },
-  headerChatLike: {
+  back: {
+    width: 44,
+    height: 44,
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    marginLeft: -4,
+  },
+  screenTitle: {
+    marginTop: spacing.xs,
+  },
+  scroll: {
+    paddingHorizontal: spacing.screen,
+    paddingBottom: 40,
+    gap: spacing.xl,
+  },
+  sectionLabel: {
+    ...typography.sectionLabel,
+    marginTop: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  dataCaption: {
+    fontFamily: fonts.sans,
+    fontSize: 13,
+    color: colors.textFaint,
+    lineHeight: 18,
+    marginBottom: spacing.md,
+  },
+  card: {
+    backgroundColor: colors.surface1,
+    borderRadius: radii.card,
+    padding: spacing.xxxxl,
+  },
+  cardHairline: { marginVertical: spacing.xl },
+  rowBetween: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 24,
-    paddingTop: 48,
-    paddingBottom: 12,
-    minHeight: 85,
-    backgroundColor: '#232323',
-    borderBottomWidth: 1,
-    borderBottomColor: '#232323',
+    gap: spacing.xl,
   },
-  backButtonChatLike: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#2D2D2D',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 16,
+  rowInfo: { flex: 1 },
+  rowTitle: {
+    fontFamily: fonts.sansMedium,
+    fontSize: 16,
+    color: colors.text,
   },
-  headerTextContainerChatLike: {
-    flex: 1,
-    justifyContent: 'center',
-    minWidth: 0,
+  rowSub: {
+    ...typography.caption,
+    marginTop: 4,
   },
-  titleChatLike: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#F5F5F5',
-    textAlign: 'left',
-  },
-  content: {
-    flex: 1,
-    paddingHorizontal: 24,
-  },
-  section: {
-    backgroundColor: '#2D2D2D',
-    borderRadius: 16,
-    padding: 24,
-    marginBottom: 24,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#F5F5F5',
-    marginLeft: 12,
-  },
-  settingItem: {
+  linkRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 16,
+    minHeight: 44,
   },
-  settingInfo: {
-    flex: 1,
-  },
-  settingTitle: {
+  linkText: {
+    fontFamily: fonts.sans,
     fontSize: 16,
-    fontWeight: '500',
-    color: '#F5F5F5',
-    marginBottom: 4,
+    color: colors.text,
   },
-  settingDescription: {
-    fontSize: 14,
-    color: '#A0A0A0',
-  },
-  settingButton: {
+  grid: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    marginBottom: 8,
+    gap: spacing.xl,
   },
-  settingButtonText: {
-    fontSize: 16,
-    color: '#F5F5F5',
-  },
-  modal: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
-  },
-  modalContent: {
-    backgroundColor: '#2D2D2D',
-    borderRadius: 16,
-    padding: 24,
-    width: '100%',
-    maxWidth: 400,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#F5F5F5',
-    marginBottom: 24,
-  },
-  inputContainer: {
-    marginBottom: 16,
-  },
-  inputLabel: {
-    fontSize: 14,
-    color: '#A0A0A0',
-    marginBottom: 8,
-  },
-  input: {
-    backgroundColor: '#1E1E1E',
-    borderWidth: 1,
-    borderColor: '#383838',
-    borderRadius: 8,
-    padding: 12,
-    color: '#F5F5F5',
-    fontSize: 16,
-  },
-  modalButtons: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 24,
-  },
-  cancelButton: {
+  tile: {
     flex: 1,
-    backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: '#383838',
-    borderRadius: 8,
-    padding: 12,
-    alignItems: 'center',
+    backgroundColor: colors.surface1,
+    borderRadius: radii.card,
+    padding: spacing.xxxxl,
+    gap: spacing.xl,
+    minHeight: 100,
   },
-  cancelButtonText: {
-    color: '#A0A0A0',
+  tileText: {
+    fontFamily: fonts.sansMedium,
+    fontSize: 15,
+    color: colors.text,
+  },
+  aboutBody: {
+    ...typography.preview,
+    lineHeight: 21,
+    marginTop: spacing.xl,
+  },
+  supportCard: {
+    backgroundColor: colors.accentSoft,
+    borderRadius: radii.card,
+    padding: spacing.xxxxl,
+    marginTop: spacing.md,
+  },
+  supportTitle: {
+    fontFamily: fonts.sansMedium,
     fontSize: 16,
-    fontWeight: '500',
+    color: colors.text,
   },
-  saveButton: {
-    flex: 1,
-    backgroundColor: '#D49A6A',
-    borderRadius: 8,
-    padding: 12,
-    alignItems: 'center',
-  },
-  saveButtonDisabled: {
-    opacity: 0.5,
-  },
-  saveButtonText: {
-    color: '#1E1E1E',
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  modalButton: {
-    backgroundColor: '#D49A6A',
-    borderRadius: 8,
-    padding: 12,
-    alignItems: 'center',
-  },
-  modalButtonText: {
-    color: '#1E1E1E',
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  supportButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#D49A6A',
-    borderRadius: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 24,
-    alignSelf: 'center',
-    marginTop: 12,
-  },
-  supportButtonText: {
-    color: '#1E1E1E',
-    fontSize: 16,
-    fontWeight: '600',
+  supportBody: {
+    ...typography.preview,
+    lineHeight: 21,
+    marginTop: spacing.md,
   },
 });

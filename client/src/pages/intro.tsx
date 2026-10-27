@@ -1,27 +1,20 @@
 import React from 'react';
-import { View, Text, Image, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, Pressable, StyleSheet } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { MessageCircle } from 'lucide-react-native';
 import { RootStackParamList } from '../types/navigation';
-import { Asset } from 'expo-asset';
-
-// Pre-load the asset
-const logoAsset = Asset.fromModule(require('../../../assets/logo_portocaliu.png'));
-logoAsset.downloadAsync(); // Start downloading the asset immediately
+import { Wordmark } from '@/components/Wordmark';
+import { PrimaryButton } from '@/components/PrimaryButton';
+import { storage } from '@/lib/storage';
+import { colors, fonts, radii, spacing, typography } from '@/theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Intro'>;
 
 export default function IntroPage({ navigation }: Props) {
-  const [isLogoLoaded, setIsLogoLoaded] = React.useState(false);
-
-  React.useEffect(() => {
-    // Ensure the logo is loaded
-    logoAsset.downloadAsync().then(() => {
-      setIsLogoLoaded(true);
-    });
-  }, []);
-
-  const handleAcceptTerms = () => {
-    navigation.navigate('Onboarding');
+  const handleAcceptTerms = async () => {
+    await storage.setTermsAccepted();
+    navigation.replace('Onboarding');
   };
 
   const handleViewTerms = () => {
@@ -29,127 +22,89 @@ export default function IntroPage({ navigation }: Props) {
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.content}>
-        {/* Logo Container */}
-        <View style={styles.logoContainer}>
-          <View style={styles.logoWrapper}>
-            <Image 
-              source={require('../../../assets/logo_portocaliu.png')}
-              style={[styles.logo, !isLogoLoaded && styles.hiddenLogo]}
-              resizeMode="contain"
-              onLoad={() => setIsLogoLoaded(true)}
-            />
-          </View>
-          <Text style={styles.title}>UNSPOKEN</Text>
-          <Text style={styles.subtitle}>
-            A therapeutic space for your thoughts
-          </Text>
-        </View>
-
-        {/* Welcome Message */}
-        <View style={styles.messageContainer}>
-          <Text style={styles.message}>
-            Express your deepest thoughts in a secure, private environment designed for emotional healing.
-          </Text>
-        </View>
-
-        {/* Action Buttons */}
-        <View style={styles.buttonContainer}>
-          <TouchableOpacity
-            onPress={handleAcceptTerms}
-            style={styles.primaryButton}
-          >
-            <Text style={styles.primaryButtonText}>Accept Terms & Continue</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity
-            onPress={handleViewTerms}
-            style={styles.secondaryButton}
-          >
-            <Text style={styles.secondaryButtonText}>View Terms & Conditions</Text>
-          </TouchableOpacity>
-        </View>
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+      <View style={styles.top}>
+        <Wordmark />
       </View>
-    </View>
+
+      <View style={styles.center}>
+        <View style={styles.tile}>
+          <MessageCircle size={32} color={colors.accent} strokeWidth={1.6} />
+        </View>
+        <Text style={styles.title}>Unspoken</Text>
+        <Text style={styles.subtitle}>A therapeutic space for your thoughts</Text>
+        <Text style={styles.body}>
+          Express your deepest thoughts in a secure, private environment designed for emotional healing.
+        </Text>
+      </View>
+
+      <View style={styles.footer}>
+        <PrimaryButton label="Accept Terms & Continue" onPress={handleAcceptTerms} />
+        <Pressable onPress={handleViewTerms} style={styles.linkBtn}>
+          <Text style={styles.linkText}>View Terms & Privacy</Text>
+        </Pressable>
+      </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  safe: {
     flex: 1,
-    backgroundColor: '#1E1E1E',
+    backgroundColor: colors.bg,
+    paddingHorizontal: spacing.screen,
+  },
+  top: {
+    paddingTop: spacing.section,
+    minHeight: 44,
     justifyContent: 'center',
+  },
+  center: {
+    flex: 1,
     alignItems: 'center',
-    padding: 32,
+    justifyContent: 'center',
+    gap: spacing.xl,
+    paddingHorizontal: spacing.md,
   },
-  content: {
-    width: '100%',
-    maxWidth: 400,
+  tile: {
+    width: 72,
+    height: 72,
+    borderRadius: radii.emptyTile,
+    backgroundColor: colors.accentSoft,
     alignItems: 'center',
-  },
-  logoContainer: {
-    alignItems: 'center',
-    marginBottom: 48,
-  },
-  logoWrapper: {
-    width: 128,
-    height: 128,
-    marginBottom: 24,
-  },
-  logo: {
-    width: '100%',
-    height: '100%',
+    justifyContent: 'center',
   },
   title: {
-    fontSize: 32,
-    fontWeight: '600',
-    color: '#F5F5F5',
-    marginBottom: 12,
-    letterSpacing: -0.5,
+    ...typography.screenTitle,
+    fontSize: 36,
+    letterSpacing: 1,
   },
   subtitle: {
+    fontFamily: fonts.sans,
     fontSize: 18,
-    color: '#A0A0A0',
-    fontWeight: '300',
-  },
-  messageContainer: {
-    marginBottom: 48,
-  },
-  message: {
-    color: '#A0A0A0',
+    color: colors.textMuted,
     textAlign: 'center',
-    lineHeight: 24,
   },
-  buttonContainer: {
-    width: '100%',
-    gap: 16,
+  body: {
+    fontFamily: fonts.sans,
+    fontSize: 15,
+    lineHeight: 22.5,
+    color: colors.textMuted,
+    textAlign: 'center',
   },
-  primaryButton: {
-    backgroundColor: '#D49A6A',
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    borderRadius: 16,
-    width: '100%',
+  footer: {
+    paddingBottom: 34,
+    gap: spacing.xl,
+  },
+  linkBtn: {
+    minHeight: 44,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  primaryButtonText: {
-    color: '#1E1E1E',
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  secondaryButton: {
-    paddingVertical: 12,
-    width: '100%',
-    alignItems: 'center',
-  },
-  secondaryButtonText: {
-    color: '#D49A6A',
-    fontSize: 16,
-    fontWeight: '500',
+  linkText: {
+    fontFamily: fonts.sansMedium,
+    fontSize: 15,
+    color: colors.textMuted,
     textDecorationLine: 'underline',
-  },
-  hiddenLogo: {
-    opacity: 0,
   },
 });

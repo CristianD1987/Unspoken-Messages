@@ -1,112 +1,125 @@
 import 'react-native-get-random-values';
 import 'react-native-gesture-handler';
 import { enableScreens } from 'react-native-screens';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
+import { AppState, AppStateStatus } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { NavigationContainer } from '@react-navigation/native';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { View, ActivityIndicator, Text } from 'react-native';
-import { Asset } from 'expo-asset';
+import { View, ActivityIndicator } from 'react-native';
 import * as SplashScreen from 'expo-splash-screen';
-import { QueryClientProvider } from '@tanstack/react-query';
-import { queryClient } from './client/src/lib/queryClient';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as SecureStore from 'expo-secure-store';
-
-// Pagini
-import IntroPage from './client/src/pages/intro';
-import OnboardingPage from './client/src/pages/onboarding';
-import PinSetupPage from './client/src/pages/pin-setup';
-import PinAuthPage from './client/src/pages/pin-auth';
-import HomePage from './client/src/pages/home';
-import ContactSelectionPage from './client/src/pages/contact-selection';
-import ChatPage from './client/src/pages/chat';
-import SettingsPage from './client/src/pages/settings';
-import TermsPage from './client/src/pages/terms';
-
-// Storage
+import {
+  useFonts,
+  Newsreader_400Regular,
+  Newsreader_400Regular_Italic,
+  Newsreader_500Medium,
+} from '@expo-google-fonts/newsreader';
+import {
+  Geist_300Light,
+  Geist_400Regular,
+  Geist_500Medium,
+} from '@expo-google-fonts/geist';
+import { resolveBootRoute, BootRoute } from './client/src/lib/bootRoute';
 import { storage } from './client/src/lib/storage';
+import { auth } from './client/src/lib/auth';
+import { navigationRef, resetToLockEnter } from './client/src/lib/navigationRef';
 import { RootStackParamList } from './client/src/types/navigation';
+import { ToastProvider } from './client/src/components/AppToast';
+import { AppPrivacyCover } from './client/src/components/AppPrivacyCover';
+import { RootNavigator } from './client/src/navigation/RootNavigator';
+import { colors } from './client/src/theme';
 
-// Pastreaza splash screen activ
 SplashScreen.preventAutoHideAsync();
 enableScreens();
 
-const Stack = createNativeStackNavigator<RootStackParamList>();
-
 export default function App() {
-  const [isReady, setIsReady] = useState(false);
-  const [error, setError] = useState<Error | null>(null);
-  const [initialRoute, setInitialRoute] = useState<string | null>(null);
+  const [boot, setBoot] = useState<BootRoute | null>(null);
+  const [appReady, setAppReady] = useState(false);
+  const [privacyCoverVisible, setPrivacyCoverVisible] = useState(false);
+
+  const [fontsLoaded] = useFonts({
+    Newsreader_400Regular,
+    Newsreader_400Regular_Italic,
+    Newsreader_500Medium,
+    Geist_300Light,
+    Geist_400Regular,
+    Geist_500Medium,
+  });
 
   useEffect(() => {
-    async function prepare() {
-      try {
-        const logoAsset = Asset.fromModule(require('./assets/logo_portocaliu.png'));
-        await logoAsset.downloadAsync();
-
-        const data = await storage.getAppData();
-        // Decide initial route based on PIN presence
-        if (!data?.settings?.pinHash) {
-          setInitialRoute('PinSetup');
-        } else {
-          setInitialRoute('PinAuth');
-        }
-
-        await SplashScreen.hideAsync();
-        setIsReady(true);
-      } catch (e) {
-        setError(e instanceof Error ? e : new Error('Failed to load assets'));
-      }
-    }
-
-    prepare();
+    (async () => {
+      const route = await resolveBootRoute();
+      setBoot(route);
+    })();
   }, []);
 
-  if (!isReady || !initialRoute) {
+  const appState = useRef(AppState.currentState);
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', async (next: AppStateStatus) => {
+      if (next === 'inactive' || next === 'background') {
+        setPrivacyCoverVisible(true);
+      }
+      if (next === 'background') {
+        auth.onAppBackground();
+      }
+
+      if (next === 'active') {
+        setPrivacyCoverVisible(false);
+        const stillAuthed = await auth.onAppForeground();
+        if (!stillAuthed) {
+          resetToLockEnter();
+        } else if (auth.isAuthenticated()) {
+          await storage.runAutoDeleteMaintenance();
+        }
+      }
+
+      appState.current = next;
+    });
+    return () => sub.remove();
+  }, []);
+
+  useEffect(() => {
+    if (fontsLoaded && boot) {
+      SplashScreen.hideAsync();
+      setAppReady(true);
+    }
+  }, [fontsLoaded, boot]);
+
+  if (!appReady || !boot) {
     return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#1E1E1E' }}>
-        <ActivityIndicator size="large" color="#FF5733" />
-        <Text style={{ color: '#FFFFFF', marginTop: 10 }}>Loading...</Text>
+      <View
+        style={{
+          flex: 1,
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: colors.bg,
+        }}
+      >
+        <ActivityIndicator size="large" color={colors.accent} />
       </View>
     );
   }
 
-  if (error) {
-    return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#1E1E1E' }}>
-        <Text style={{ color: '#FFFFFF' }}>Error loading app: {error.message}</Text>
-      </View>
-    );
-  }
+  const lockParams =
+    boot.name === 'Lock' ? (boot.params as RootStackParamList['Lock']) : undefined;
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <SafeAreaProvider>
-        <NavigationContainer>
-          <View style={{ flex: 1, backgroundColor: '#1E1E1E' }}>
-            <Stack.Navigator
-              initialRouteName={initialRoute as any}
-              screenOptions={{
-                headerShown: false,
-                contentStyle: { backgroundColor: '#1E1E1E' },
-              }}
-            >
-              <Stack.Screen name="Intro" component={IntroPage} />
-              <Stack.Screen name="Onboarding" component={OnboardingPage} />
-              <Stack.Screen name="PinSetup" component={PinSetupPage} />
-              <Stack.Screen name="PinAuth" component={PinAuthPage} />
-              <Stack.Screen name="Home" component={HomePage} />
-              <Stack.Screen name="ContactSelection" component={ContactSelectionPage} />
-              <Stack.Screen name="Chat" component={ChatPage} />
-              <Stack.Screen name="Settings" component={SettingsPage} />
-              <Stack.Screen name="Terms" component={TermsPage} />
-            </Stack.Navigator>
+    <KeyboardProvider>
+    <SafeAreaProvider>
+      <ToastProvider>
+        <NavigationContainer ref={navigationRef}>
+          <View style={{ flex: 1, backgroundColor: colors.bg }}>
+            <RootNavigator
+              initialRouteName={boot.name}
+              lockInitialParams={lockParams}
+            />
+            <AppPrivacyCover visible={privacyCoverVisible} />
           </View>
         </NavigationContainer>
-        <StatusBar style="light" />
+        <StatusBar style="light" backgroundColor={colors.bg} />
+      </ToastProvider>
       </SafeAreaProvider>
-    </QueryClientProvider>
+    </KeyboardProvider>
   );
 }
