@@ -33,7 +33,6 @@ module.exports = function (api) {
       '@babel/plugin-transform-template-literals',
       '@babel/plugin-transform-runtime',
       'react-native-reanimated/plugin',
-      'react-native-paper/babel'
     ],
     env: {
       production: {
