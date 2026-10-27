@@ -16,7 +16,7 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.unspokentherapy.app",
+      "bundleIdentifier": "com.fofensoft.unspoken",
       "infoPlist": {
         "CFBundleDisplayName": "Unspoken",
         "NSContactsUsageDescription": "Unspoken uses your contacts only when you pick someone to write to. Nothing is uploaded.",
@@ -26,14 +26,13 @@
       }
     },
     "android": {
-      "label": "Unspoken",
       "adaptiveIcon": {
         "foregroundImage": "./assets/unspoken-icon/adaptive-foreground.png",
         "backgroundImage": "./assets/unspoken-icon/adaptive-background.png",
         "monochromeImage": "./assets/unspoken-icon/adaptive-monochrome.png",
         "backgroundColor": "#111320"
       },
-      "package": "com.unspokentherapy.app",
+      "package": "com.fofensoft.unspoken",
       "permissions": [
         "android.permission.READ_CONTACTS",
         "android.permission.USE_BIOMETRIC",

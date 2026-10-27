@@ -10,7 +10,6 @@ const { transformer, resolver } = config;
 
 config.transformer = {
   ...transformer,
-  babelTransformerPath: require.resolve('react-native-svg-transformer'),
   minifierPath: 'metro-minify-terser',
   minifierConfig: {
     compress: {
@@ -23,8 +22,6 @@ config.transformer = {
 
 config.resolver = {
   ...resolver,
-  assetExts: resolver.assetExts.filter((ext) => ext !== 'svg'),
-  sourceExts: [...resolver.sourceExts, 'svg'],
   extraNodeModules: {
     '@': path.resolve(__dirname, './client/src'),
     '@assets': path.resolve(__dirname, './assets'),
