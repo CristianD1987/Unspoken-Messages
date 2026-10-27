@@ -3,11 +3,16 @@
   "version": "1.0.0",
   "license": "MIT",
   "scripts": {
+    "sync:legal": "node scripts/sync-legal.js",
+    "prestart": "node scripts/sync-legal.js",
+    "preandroid": "node scripts/sync-legal.js",
+    "preios": "node scripts/sync-legal.js",
+    "eas-build-pre-install": "node scripts/sync-legal.js",
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "node scripts/sync-legal.js && tsc --noEmit"
   },
   "dependencies": {
     "@expo-google-fonts/geist": "^0.4.2",

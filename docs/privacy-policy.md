@@ -51,7 +51,7 @@ If you have chosen in your device settings to share analytics with app developer
 
 ## Deleting your data
 
-You can delete individual messages, all messages in a conversation, or whole conversations in the app. "Forgot PIN" erases everything. Uninstalling the app removes all its data from your device. Optional auto-delete can remove old messages automatically.
+You can delete individual messages, all messages in a conversation, or whole conversations in the app. "Forgot PIN" erases everything. Uninstalling the app removes all its data from your device. Optional auto-delete can remove old messages automatically. If you turn on "Erase data after 10 failed attempts", everything is erased after 10 wrong PINs in a row.
 
 ## Your rights
 
