@@ -180,6 +180,30 @@ export default function SettingsPage({ navigation }: Props) {
             />
           </View>
           <View style={[hairline, styles.cardHairline]} />
+          <View style={styles.rowBetween}>
+            <View style={styles.rowInfo}>
+              <Text style={styles.rowTitle}>Erase data after 10 failed attempts</Text>
+              <Text style={styles.rowSub}>
+                After 10 wrong PINs in a row, everything on this device is erased.
+              </Text>
+            </View>
+            <Toggle
+              variant="settings"
+              value={!!data?.settings.eraseAfterTenFailedAttempts}
+              onValueChange={(v) => {
+                if (v) {
+                  navigation.navigate('Lock', {
+                    mode: 'enter',
+                    intent: 'confirmEnableEraseOnFailedAttempts',
+                    returnAfterWithdrawCancel: { name: 'Settings' },
+                  });
+                } else {
+                  updateSettings({ eraseAfterTenFailedAttempts: false });
+                }
+              }}
+            />
+          </View>
+          <View style={[hairline, styles.cardHairline]} />
           <Pressable
             style={styles.linkRow}
             onPress={() => navigation.navigate('Lock', { mode: 'change' })}
@@ -225,7 +249,14 @@ export default function SettingsPage({ navigation }: Props) {
             <ChevronRight size={18} color={colors.textFaint} strokeWidth={1.6} />
           </Pressable>
           <View style={[hairline, styles.cardHairline]} />
-          <Pressable style={styles.linkRow} onPress={() => navigation.navigate('Terms')}>
+          <Pressable
+            style={styles.linkRow}
+            onPress={() =>
+              navigation.navigate('Terms', {
+                returnAfterWithdrawCancel: { name: 'Settings' },
+              })
+            }
+          >
             <Text style={styles.linkText}>Terms & Privacy</Text>
             <ChevronRight size={18} color={colors.textFaint} strokeWidth={1.6} />
           </Pressable>

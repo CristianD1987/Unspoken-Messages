@@ -1,6 +1,9 @@
 import { storage } from '@/lib/storage';
 import { auth } from '@/lib/auth';
-import { migrateKeychainAccessibility } from '@/lib/secureStore';
+import {
+  clearSecureStoreForFreshInstall,
+  migrateKeychainAccessibility,
+} from '@/lib/secureStore';
 import { migrateLocalEncryption } from '@/lib/encryption';
 import { cleanupLegacyTrackingStorage } from '@/lib/trackingCleanup';
 import type { RootStackParamList } from '@/types/navigation';
@@ -17,13 +20,17 @@ export type BootRoute =
 
 export async function resolveBootRoute(): Promise<BootRoute> {
   await cleanupLegacyTrackingStorage();
-  await auth.prepareColdStart();
-  await migrateKeychainAccessibility();
 
   let health = await storage.probeStorageHealth();
   if (health === 'locked') {
     return { name: 'DataRecovery' };
   }
+  if (health === 'fresh') {
+    await clearSecureStoreForFreshInstall();
+  }
+
+  await auth.prepareColdStart();
+  await migrateKeychainAccessibility();
 
   await migrateLocalEncryption();
   health = await storage.probeStorageHealth();
@@ -36,6 +43,11 @@ export async function resolveBootRoute(): Promise<BootRoute> {
 }
 
 export async function resolveInitialRoute(): Promise<BootRoute> {
+  const termsAccepted = await storage.areTermsAccepted();
+  if (!termsAccepted) {
+    return { name: 'Intro' };
+  }
+
   const data = await storage.getAppData();
   const onboardingDone =
     !!data?.settings?.onboardingCompleted || (await storage.isOnboardingComplete());

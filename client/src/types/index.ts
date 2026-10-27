@@ -63,6 +63,8 @@ export interface AppData {
     autoDeleteDays: number;
     /** When true, show re-confirm sheet and block auto-delete until cleared. */
     autoDeleteNeedsReconfirm?: boolean;
+    /** After 10 consecutive wrong unlock PINs, wipe device (requires PIN to enable). */
+    eraseAfterTenFailedAttempts?: boolean;
     onboardingCompleted: boolean;
     totalMessagesSent: number;
     donationIntervalsShown: number[];

@@ -16,6 +16,19 @@ import { colors, fonts, spacing, typography } from '@/theme';
 import { useHardwareBack } from '@/hooks/useHardwareBack';
 import { ForgotPinSheet } from '@/components/sheets/ForgotPinSheet';
 import { navigateAfterUnlock } from '@/lib/navigateAfterUnlock';
+import { cancelWithdrawConsent, completeWithdrawConsent } from '@/lib/withdrawConsent';
+import {
+  formatLockoutCountdown,
+  unlockPinFailureSubtitle,
+} from '@/lib/pinLockoutSchedule';
+import {
+  getEffectivePinLockoutState,
+  isPinLockoutActive,
+  pinLockoutRemainingMs,
+  registerFailedPinAttempt,
+  resetPinLockoutOnSuccess,
+  type PinLockoutState,
+} from '@/lib/pinLockoutState';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Lock'>;
 type LockMode = 'create' | 'confirm' | 'enter';
@@ -26,8 +39,18 @@ const COPY: Record<LockMode, [string, string]> = {
   enter: ['Welcome back', 'Enter your PIN to continue'],
 };
 
+const EMPTY_LOCKOUT: PinLockoutState = {
+  failedAttempts: 0,
+  lockedUntil: 0,
+  lastAttemptAt: 0,
+};
+
 export default function LockPage({ navigation, route }: Props) {
   const changingPin = route.params?.mode === 'change';
+  const withdrawIntent = route.params?.intent === 'withdrawConsent';
+  const confirmEnableEraseIntent =
+    route.params?.intent === 'confirmEnableEraseOnFailedAttempts';
+  const sideFlowCancel = withdrawIntent || confirmEnableEraseIntent;
   const initialMode: LockMode =
     route.params?.mode === 'enter' ? 'enter' : 'create';
 
@@ -39,6 +62,7 @@ export default function LockPage({ navigation, route }: Props) {
   const [processing, setProcessing] = useState(false);
   const [forgotOpen, setForgotOpen] = useState(false);
   const [wiping, setWiping] = useState(false);
+  const [lockoutState, setLockoutState] = useState<PinLockoutState>(EMPTY_LOCKOUT);
 
   const { data, updateSettings } = useAppData();
   const { showToast } = useAppToast();
@@ -49,9 +73,43 @@ export default function LockPage({ navigation, route }: Props) {
     else if (route.params?.mode === 'create') setLockMode('create');
   }, [route.params?.mode]);
 
+  const applyUnlockLockout = lockMode === 'enter' && !changingPin;
+  const eraseAfterTenFailedAttempts = !!data?.settings.eraseAfterTenFailedAttempts;
+
+  useEffect(() => {
+    if (!applyUnlockLockout) return;
+    void getEffectivePinLockoutState().then(setLockoutState);
+  }, [applyUnlockLockout]);
+
+  useEffect(() => {
+    if (!applyUnlockLockout) return;
+    const id = setInterval(() => {
+      void getEffectivePinLockoutState().then(setLockoutState);
+    }, 1000);
+    return () => clearInterval(id);
+  }, [applyUnlockLockout]);
+
+  const now = Date.now();
+  const pinLockedOut = applyUnlockLockout && isPinLockoutActive(lockoutState, now);
+
   const [title, subtitleDefault] = COPY[lockMode];
-  const subtitle = error || subtitleDefault;
-  const subtitleColor = error ? colors.danger : colors.textMuted;
+  let subtitle = error || subtitleDefault;
+  let subtitleColor = error ? colors.danger : colors.textMuted;
+  if (pinLockedOut) {
+    subtitle = `Too many attempts. Try again in ${formatLockoutCountdown(
+      pinLockoutRemainingMs(lockoutState, now)
+    )}.`;
+    subtitleColor = colors.danger;
+  } else if (!error && lockMode === 'enter' && !changingPin) {
+    subtitle = COPY.enter[1];
+    subtitleColor = colors.textMuted;
+  }
+
+  const returnAfterWithdrawCancel = route.params?.returnAfterWithdrawCancel;
+
+  const abortWithdrawConsent = useCallback(() => {
+    cancelWithdrawConsent(navigation, returnAfterWithdrawCancel);
+  }, [navigation, returnAfterWithdrawCancel]);
 
   const completePin = useCallback(
     async (fullPin: string) => {
@@ -91,12 +149,46 @@ export default function LockPage({ navigation, route }: Props) {
         }
         return;
       }
+      if (applyUnlockLockout) {
+        const liveLockout = await getEffectivePinLockoutState();
+        if (isPinLockoutActive(liveLockout)) {
+          setLockoutState(liveLockout);
+          return;
+        }
+      }
       setProcessing(true);
       try {
         const ok = await auth.authenticate(fullPin);
         if (ok) {
+          await resetPinLockoutOnSuccess();
+          setLockoutState(EMPTY_LOCKOUT);
+          if (withdrawIntent) {
+            await completeWithdrawConsent(navigation);
+            return;
+          }
+          if (confirmEnableEraseIntent) {
+            updateSettings({ eraseAfterTenFailedAttempts: true });
+            navigation.reset({ index: 0, routes: [{ name: 'Settings' }] });
+            return;
+          }
           await storage.runAutoDeleteMaintenance();
           void navigateAfterUnlock(navigation);
+        } else if (applyUnlockLockout) {
+          const { shouldWipe, state } = await registerFailedPinAttempt();
+          setLockoutState(state);
+          if (shouldWipe) {
+            await storage.wipeDeviceAndRestart();
+            navigation.reset({ index: 0, routes: [{ name: 'Intro' }] });
+            return;
+          }
+          if (isPinLockoutActive(state)) {
+            setError('');
+          } else {
+            setError(
+              unlockPinFailureSubtitle(state.failedAttempts, eraseAfterTenFailedAttempts)
+            );
+          }
+          setPin('');
         } else {
           setError('Wrong PIN. Try again.');
           setPin('');
@@ -105,11 +197,23 @@ export default function LockPage({ navigation, route }: Props) {
         setProcessing(false);
       }
     },
-    [lockMode, firstPin, changingPin, biometricDraft, navigation, showToast, updateSettings]
+    [
+      lockMode,
+      firstPin,
+      changingPin,
+      biometricDraft,
+      navigation,
+      showToast,
+      updateSettings,
+      withdrawIntent,
+      confirmEnableEraseIntent,
+      applyUnlockLockout,
+      eraseAfterTenFailedAttempts,
+    ]
   );
 
   const pressDigit = (d: string) => {
-    if (processing || pin.length >= 4) return;
+    if (processing || pin.length >= 4 || pinLockedOut) return;
     const next = pin + d;
     setPin(next);
     setError('');
@@ -132,6 +236,17 @@ export default function LockPage({ navigation, route }: Props) {
       });
       if (result.success) {
         auth.unlockSession();
+        await resetPinLockoutOnSuccess();
+        setLockoutState(EMPTY_LOCKOUT);
+        if (withdrawIntent) {
+          await completeWithdrawConsent(navigation);
+          return;
+        }
+        if (confirmEnableEraseIntent) {
+          updateSettings({ eraseAfterTenFailedAttempts: true });
+          navigation.reset({ index: 0, routes: [{ name: 'Settings' }] });
+          return;
+        }
         await storage.runAutoDeleteMaintenance();
         void navigateAfterUnlock(navigation);
       }
@@ -148,10 +263,14 @@ export default function LockPage({ navigation, route }: Props) {
         setForgotOpen(false);
         return true;
       }
+      if (sideFlowCancel && lockMode === 'enter') {
+        abortWithdrawConsent();
+        return true;
+      }
       if (changingPin) return false;
       if (lockMode === 'enter') return true;
       return false;
-    }, [changingPin, lockMode, forgotOpen])
+    }, [changingPin, lockMode, forgotOpen, sideFlowCancel, abortWithdrawConsent])
   );
 
   const showBioKey = lockMode === 'enter' && !!data?.settings.biometricEnabled;
@@ -161,9 +280,11 @@ export default function LockPage({ navigation, route }: Props) {
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <View style={styles.topBar}>
         <Wordmark />
-        {changingPin ? (
+        {changingPin || sideFlowCancel ? (
           <Pressable
-            onPress={() => navigation.navigate('Settings')}
+            onPress={
+              changingPin ? () => navigation.navigate('Settings') : abortWithdrawConsent
+            }
             hitSlop={12}
             style={styles.cancelTop}
           >
@@ -177,18 +298,22 @@ export default function LockPage({ navigation, route }: Props) {
       <View style={styles.centerBlock}>
         <Text style={typography.lockTitle}>{title}</Text>
         <Text style={[styles.subtitle, { color: subtitleColor }]}>{subtitle}</Text>
-        <View style={styles.dotsWrap}>
-          <PinDots length={4} filled={pin.length} error={!!error} />
-        </View>
+        {!pinLockedOut ? (
+          <View style={styles.dotsWrap}>
+            <PinDots length={4} filled={pin.length} error={!!error} />
+          </View>
+        ) : null}
       </View>
 
       <View style={styles.bottom}>
         <Keypad
           onNumberPress={pressDigit}
-          onDelete={() => !processing && pin.length > 0 && setPin(pin.slice(0, -1))}
+          onDelete={() => !processing && !pinLockedOut && pin.length > 0 && setPin(pin.slice(0, -1))}
           showBiometric={showBioKey}
           onBiometric={handleBiometricUnlock}
           disabled={processing}
+          pinKeysDimmed={pinLockedOut}
+          biometricDisabled={processing}
         />
         {showBioSetup ? (
           <View style={styles.bioCard}>

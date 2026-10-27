@@ -11,6 +11,7 @@ export const APP_SECURE_STORE_KEYS = [
   'encryption_key',
   'encryption_migrated_v2',
   KEYCHAIN_ACCESSIBILITY_MIGRATION_FLAG,
+  'pin_lockout_state',
 ] as const;
 
 export async function secureStoreGet(key: string): Promise<string | null> {
@@ -54,6 +55,14 @@ export async function migrateKeychainAccessibility(): Promise<void> {
   if (flagVerify !== 'done') {
     throw new Error('Keychain accessibility migration flag verify failed');
   }
+}
+
+/**
+ * iOS Keychain can survive app uninstall. On a fresh install (no AsyncStorage
+ * ciphertext), orphaned keys are useless and can carry stale lockout state.
+ */
+export async function clearSecureStoreForFreshInstall(): Promise<void> {
+  await wipeAllSecureStoreKeys();
 }
 
 export async function wipeAllSecureStoreKeys(): Promise<void> {

@@ -275,6 +275,10 @@ class StorageManager {
     await this.setItem(STORAGE_KEYS.TERMS_ACCEPTED, String(CURRENT_TERMS_VERSION));
   }
 
+  async clearTermsAccepted(): Promise<void> {
+    await this.removeItem(STORAGE_KEYS.TERMS_ACCEPTED);
+  }
+
   async exportData(): Promise<string> {
     // Export the current app data as encrypted JSON string
     const appData = await this.getAppData();
