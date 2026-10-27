@@ -7,7 +7,7 @@ import { useAppData } from "@/hooks/use-storage";
 import { auth } from "@/lib/auth";
 import { storage } from "@/lib/storage";
 import { useToast } from "@/hooks/use-toast";
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
 
