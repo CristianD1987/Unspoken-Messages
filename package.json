@@ -60,6 +60,7 @@
     "@types/crypto-js": "^4.2.2",
     "@types/react": "~19.1.10",
     "babel-plugin-module-resolver": "^5.0.2",
+    "babel-preset-expo": "~54.0.0",
     "metro-minify-terser": "^0.82.4",
     "react-native-svg-transformer": "^1.5.1",
     "typescript": "~5.9.2"
