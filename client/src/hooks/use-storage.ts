@@ -4,8 +4,8 @@ import type { AppData, Contact, Message, Conversation, AvatarColor } from "../ty
 import 'react-native-get-random-values'; // sus in fisier, o singura data
 import 'react-native-get-random-values'; // Trebuie primul
 import { v4 as uuidv4 } from 'uuid';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { incrementConversation, incrementMessage } from "@/lib/stats";
+import { deleteAvatarFile, duplicateAvatarFile } from "@/lib/avatars";
+import { UndecryptableStorageError } from "@/lib/storageErrors";
 
 
 export function useAppData() {
@@ -49,7 +49,11 @@ export function useAppData() {
           setData(appData);
         }
       } catch (error) {
-        console.error("Failed to load app data:", error);
+        if (error instanceof UndecryptableStorageError) {
+          setData(null);
+        } else {
+          console.error("Failed to load app data:", error);
+        }
       } finally {
         setIsLoading(false);
       }
@@ -101,16 +105,6 @@ export function useAppData() {
     }
   }, [data]);
 
-  // Helper to get or create a unique user ID for analytics
-  async function getUserId(): Promise<string> {
-    let userId = await AsyncStorage.getItem('unspoken_user_id');
-    if (!userId) {
-      userId = uuidv4();
-      await AsyncStorage.setItem('unspoken_user_id', userId);
-    }
-    return userId;
-  }
-
   const addContact = useCallback(async (name: string): Promise<string> => {
     const avatarColors: AvatarColor[] = [
       "from-pink-500 to-rose-600",
@@ -155,9 +149,42 @@ export function useAppData() {
     };
     await storage.setAppData(updatedData);
     setData(updatedData);
-    // Track in Supabase
-    const userId = await getUserId();
-    incrementConversation(userId);
+    return contactId;
+  }, []);
+
+  /** New open conversation with the same display name and a copied avatar file. */
+  const branchNewConversation = useCallback(async (sourceContactId: string): Promise<string> => {
+    const latestData = await storage.getAppData();
+    if (!latestData) throw new Error('Failed to load app data');
+    const source = latestData.contacts.find((c) => c.id === sourceContactId);
+    if (!source) throw new Error('Contact not found');
+
+    const avatarFile = await duplicateAvatarFile(source.avatarFile);
+    const contactId = uuidv4();
+    const newContact: Contact = {
+      id: contactId,
+      name: source.name,
+      avatar: source.avatar,
+      color: source.color,
+      createdAt: new Date(),
+      avatarFile,
+    };
+    const newConversation: Conversation = {
+      id: uuidv4(),
+      contactId,
+      messageCount: 0,
+      unreadCount: 0,
+      isClosed: false,
+      lastMessage: undefined,
+      lastMessageAt: undefined,
+    };
+    const updatedData: AppData = {
+      ...latestData,
+      contacts: [...latestData.contacts, newContact],
+      conversations: [...latestData.conversations, newConversation],
+    };
+    await storage.setAppData(updatedData);
+    setData(updatedData);
     return contactId;
   }, []);
 
@@ -194,7 +221,6 @@ export function useAppData() {
         isClosed: false,
       });
     }
-    // Update total messages count for donation tracking
     const newTotalMessages = latestData.settings.totalMessagesSent + 1;
     const updatedData: AppData = {
       ...latestData,
@@ -207,9 +233,6 @@ export function useAppData() {
     };
     await storage.setAppData(updatedData);
     setData(updatedData);
-    // Track in Supabase
-    const userId = await getUserId();
-    incrementMessage(userId);
   }, []);
 
   const editMessage = useCallback((messageId: string, newContent: string) => {
@@ -245,14 +268,18 @@ export function useAppData() {
     });
   }, [updateData]);
 
-  const deleteContact = useCallback((contactId: string) => {
-    updateData(data => ({
-      ...data,
-      contacts: data.contacts.filter(c => c.id !== contactId),
-      messages: data.messages.filter(m => m.contactId !== contactId),
-      conversations: data.conversations.filter(c => c.contactId !== contactId),
+  const deleteContact = useCallback(async (contactId: string) => {
+    const contact = data?.contacts.find((c) => c.id === contactId);
+    if (contact?.avatarFile) {
+      await deleteAvatarFile(contact.avatarFile);
+    }
+    updateData((d) => ({
+      ...d,
+      contacts: d.contacts.filter((c) => c.id !== contactId),
+      messages: d.messages.filter((m) => m.contactId !== contactId),
+      conversations: d.conversations.filter((c) => c.contactId !== contactId),
     }));
-  }, [updateData]);
+  }, [updateData, data?.contacts]);
 
   const updateSettings = useCallback((settings: Partial<AppData['settings']>) => {
     updateData(data => ({
@@ -296,12 +323,24 @@ export function useAppData() {
           name: contact.name,
           avatar: contact.avatar,
           color: contact.color,
+          avatarFile: contact.avatarFile,
           imageUrl: contact.imageUrl,
         },
         lastMessage,
         isClosed: conversation.isClosed,
+        closedOn: conversation.closedOn,
       };
-    }).filter(Boolean);
+    })
+      .filter(Boolean)
+      .sort((a, b) => {
+        const ta = a!.lastMessage?.timestamp
+          ? new Date(a!.lastMessage.timestamp).getTime()
+          : 0;
+        const tb = b!.lastMessage?.timestamp
+          ? new Date(b!.lastMessage.timestamp).getTime()
+          : 0;
+        return tb - ta;
+      });
   }, [data]);
 
   // Custom donation modal cycle: 5, 10, 20, then reset to 5
@@ -389,6 +428,7 @@ export function useAppData() {
     isLoading,
     updateData,
     addContact,
+    branchNewConversation,
     addMessage,
     editMessage,
     deleteMessage,
