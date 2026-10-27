@@ -70,7 +70,7 @@ export default function DataRecoveryPage({ navigation }: Props) {
       setImportOpen(false);
       setPendingFile(null);
       const route = await resolveInitialRoute();
-      navigation.reset(bootRouteResetRoutes(route));
+      navigation.reset(bootRouteResetRoutes(route, { instantTransition: true }));
     } catch {
       setImportError('Wrong password. Try again.');
     } finally {

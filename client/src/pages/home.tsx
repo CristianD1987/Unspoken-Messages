@@ -73,10 +73,13 @@ export default function HomePage({ navigation }: Props) {
   useEffect(() => {
     (async () => {
       if (auth.isAuthenticated()) return;
+      const current = navigation.getState().routes[navigation.getState().index]?.name;
       const termsAccepted = await storage.areTermsAccepted();
       if (!termsAccepted) {
+        if (current === 'Intro') return;
         navigation.reset({ index: 0, routes: [{ name: 'Intro' }] });
       } else {
+        if (current === 'Lock') return;
         navigation.replace('Lock', { mode: 'enter' });
       }
     })();

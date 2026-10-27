@@ -1,13 +1,12 @@
 import 'react-native-get-random-values';
 import 'react-native-gesture-handler';
 import { enableScreens } from 'react-native-screens';
-import React, { useEffect, useState, useRef } from 'react';
-import { AppState, AppStateStatus } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AppState, AppStateStatus, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { NavigationContainer } from '@react-navigation/native';
-import { View, ActivityIndicator } from 'react-native';
 import * as SplashScreen from 'expo-splash-screen';
 import {
   useFonts,
@@ -20,13 +19,19 @@ import {
   Geist_400Regular,
   Geist_500Medium,
 } from '@expo-google-fonts/geist';
-import { resolveBootRoute, BootRoute } from './client/src/lib/bootRoute';
+import {
+  safeResolveBootRoute,
+  bootToInitialNavigationState,
+  BOOT_RESOLVE_TIMEOUT_MS,
+  type BootRoute,
+} from './client/src/lib/bootRoute';
 import { storage } from './client/src/lib/storage';
 import { auth } from './client/src/lib/auth';
 import { navigationRef, resetAfterSessionEnded } from './client/src/lib/navigationRef';
-import { RootStackParamList } from './client/src/types/navigation';
+import { createBootNavigationTracer } from './client/src/lib/bootNavigationTrace';
 import { ToastProvider } from './client/src/components/AppToast';
 import { AppPrivacyCover } from './client/src/components/AppPrivacyCover';
+import { BootErrorScreen } from './client/src/components/BootErrorScreen';
 import { RootNavigator } from './client/src/navigation/RootNavigator';
 import { colors } from './client/src/theme';
 
@@ -35,8 +40,12 @@ enableScreens();
 
 export default function App() {
   const [boot, setBoot] = useState<BootRoute | null>(null);
-  const [appReady, setAppReady] = useState(false);
+  const [bootAttempt, setBootAttempt] = useState(0);
+  const [bootTimedOut, setBootTimedOut] = useState(false);
+  const [navReady, setNavReady] = useState(false);
   const [privacyCoverVisible, setPrivacyCoverVisible] = useState(false);
+  const splashHidden = useRef(false);
+  const bootTimedOutRef = useRef(false);
 
   const [fontsLoaded] = useFonts({
     Newsreader_400Regular,
@@ -47,12 +56,64 @@ export default function App() {
     Geist_500Medium,
   });
 
-  useEffect(() => {
-    (async () => {
-      const route = await resolveBootRoute();
-      setBoot(route);
-    })();
+  const bootTracer = useMemo(() => createBootNavigationTracer(navigationRef), []);
+
+  const hideSplashOnce = useCallback(async () => {
+    if (splashHidden.current) return;
+    splashHidden.current = true;
+    await SplashScreen.hideAsync();
+    if (__DEV__) {
+      console.log('[boot nav] SplashScreen.hideAsync');
+    }
   }, []);
+
+  const retryBoot = useCallback(() => {
+    bootTimedOutRef.current = false;
+    setBootTimedOut(false);
+    setBoot(null);
+    setNavReady(false);
+    setBootAttempt((n) => n + 1);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    bootTimedOutRef.current = false;
+    setBootTimedOut(false);
+    setBoot(null);
+    setNavReady(false);
+
+    const timeoutId = setTimeout(() => {
+      if (cancelled) return;
+      bootTimedOutRef.current = true;
+      setBootTimedOut(true);
+      void hideSplashOnce();
+    }, BOOT_RESOLVE_TIMEOUT_MS);
+
+    (async () => {
+      const { route, recoveredFromError } = await safeResolveBootRoute();
+      if (cancelled || bootTimedOutRef.current) return;
+      clearTimeout(timeoutId);
+      if (__DEV__) {
+        console.log('[boot nav] resolveBootRoute →', route.name, route, {
+          recoveredFromError,
+        });
+      }
+      setBoot(route);
+      if (recoveredFromError) {
+        void hideSplashOnce();
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+    };
+  }, [bootAttempt, hideSplashOnce]);
+
+  const onNavigationReady = useCallback(() => {
+    bootTracer.onReady();
+    setNavReady(true);
+  }, [bootTracer]);
 
   const appState = useRef(AppState.currentState);
   useEffect(() => {
@@ -65,13 +126,13 @@ export default function App() {
       }
 
       if (next === 'active') {
-        setPrivacyCoverVisible(false);
         const stillAuthed = await auth.onAppForeground();
         if (!stillAuthed) {
-          void resetAfterSessionEnded();
+          await resetAfterSessionEnded({ animate: false });
         } else if (auth.isAuthenticated()) {
           await storage.runAutoDeleteMaintenance();
         }
+        setPrivacyCoverVisible(false);
       }
 
       appState.current = next;
@@ -80,45 +141,47 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (fontsLoaded && boot) {
-      SplashScreen.hideAsync();
-      setAppReady(true);
+    if (fontsLoaded && boot && navReady) {
+      void hideSplashOnce();
     }
-  }, [fontsLoaded, boot]);
+  }, [fontsLoaded, boot, navReady, hideSplashOnce]);
 
-  if (!appReady || !boot) {
+  if (bootTimedOut && !boot) {
     return (
-      <View
-        style={{
-          flex: 1,
-          alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor: colors.bg,
-        }}
-      >
-        <ActivityIndicator size="large" color={colors.accent} />
-      </View>
+      <SafeAreaProvider>
+        <BootErrorScreen onRetry={retryBoot} />
+        <StatusBar style="light" backgroundColor={colors.bg} />
+      </SafeAreaProvider>
     );
   }
 
-  const lockParams =
-    boot.name === 'Lock' ? (boot.params as RootStackParamList['Lock']) : undefined;
+  const bootResolved = fontsLoaded && boot !== null;
+
+  if (!bootResolved || !boot) {
+    return null;
+  }
+
+  const initialNavigationState = bootToInitialNavigationState(boot);
+  bootTracer.onMount();
 
   return (
     <KeyboardProvider>
-    <SafeAreaProvider>
-      <ToastProvider>
-        <NavigationContainer ref={navigationRef}>
-          <View style={{ flex: 1, backgroundColor: colors.bg }}>
-            <RootNavigator
-              initialRouteName={boot.name}
-              lockInitialParams={lockParams}
-            />
-            <AppPrivacyCover visible={privacyCoverVisible} />
-          </View>
-        </NavigationContainer>
-        <StatusBar style="light" backgroundColor={colors.bg} />
-      </ToastProvider>
+      <SafeAreaProvider>
+        <ToastProvider>
+          <NavigationContainer
+            key={bootAttempt}
+            ref={navigationRef}
+            initialState={initialNavigationState}
+            onReady={onNavigationReady}
+            onStateChange={__DEV__ ? bootTracer.onStateChange : undefined}
+          >
+            <View style={{ flex: 1, backgroundColor: colors.bg }}>
+              <RootNavigator />
+              <AppPrivacyCover visible={privacyCoverVisible} />
+            </View>
+          </NavigationContainer>
+          <StatusBar style="light" backgroundColor={colors.bg} />
+        </ToastProvider>
       </SafeAreaProvider>
     </KeyboardProvider>
   );

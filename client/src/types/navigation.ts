@@ -4,13 +4,14 @@ export type WithdrawCancelReturn =
   | { name: 'Settings'; params?: { pinUpdated?: boolean } };
 
 export type RootStackParamList = {
-  Intro: undefined;
+  Intro: { instantTransition?: boolean } | undefined;
   Onboarding: undefined;
   Lock:
     | {
         mode?: 'create' | 'enter' | 'change';
         intent?: 'withdrawConsent' | 'confirmEnableEraseOnFailedAttempts';
         returnAfterWithdrawCancel?: WithdrawCancelReturn;
+        instantTransition?: boolean;
       }
     | undefined;
   Home: undefined;
@@ -22,5 +23,5 @@ export type RootStackParamList = {
         returnAfterWithdrawCancel?: WithdrawCancelReturn;
       }
     | undefined;
-  DataRecovery: undefined;
+  DataRecovery: { instantTransition?: boolean } | undefined;
 };
