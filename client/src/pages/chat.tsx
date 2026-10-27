@@ -12,7 +12,7 @@ import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
-import { ChevronLeft, MoreHorizontal, ArrowUp } from 'lucide-react-native';
+import { ChevronLeft, MoreHorizontal, ArrowUp, Lock } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { format } from 'date-fns';
 import { RootStackParamList } from '../types/navigation';
@@ -21,6 +21,7 @@ import { DonationModal } from '@/components/donation-modal';
 import { useAppData } from '@/hooks/use-storage';
 import { useAppToast } from '@/components/AppToast';
 import { auth } from '@/lib/auth';
+import { storage } from '@/lib/storage';
 import { EncryptedAvatar } from '@/components/EncryptedAvatar';
 import {
   saveAvatarFromSourceUri,
@@ -28,6 +29,9 @@ import {
   contactHasPhoto,
 } from '@/lib/avatars';
 import { HeartCheckIcon } from '@/components/HeartCheckIcon';
+import { ClosureCard } from '@/components/ClosureCard';
+import { closureCopy } from '@/copy/closure';
+import { chatCopy } from '@/copy/chat';
 import {
   SheetType,
   OptionsSheet,
@@ -64,6 +68,7 @@ export default function ChatPage({ navigation, route }: Props) {
   const [messageActionsOpen, setMessageActionsOpen] = useState(false);
   const [editMessageOpen, setEditMessageOpen] = useState(false);
   const [deleteMessageOpen, setDeleteMessageOpen] = useState(false);
+  const [revealClosureCard, setRevealClosureCard] = useState(false);
 
   const {
     data,
@@ -88,7 +93,11 @@ export default function ChatPage({ navigation, route }: Props) {
 
   useEffect(() => {
     (async () => {
-      if (!auth.isAuthenticated()) {
+      if (auth.isAuthenticated()) return;
+      const termsAccepted = await storage.areTermsAccepted();
+      if (!termsAccepted) {
+        navigation.reset({ index: 0, routes: [{ name: 'Intro' }] });
+      } else {
         navigation.replace('Lock', { mode: 'enter' });
       }
     })();
@@ -192,6 +201,8 @@ export default function ChatPage({ navigation, route }: Props) {
       ),
     }));
     setSheet(null);
+    setRevealClosureCard(true);
+    scrollToLatest(true);
   };
 
   const confirmDelete = () => {
@@ -269,10 +280,7 @@ export default function ChatPage({ navigation, route }: Props) {
     );
   }
 
-  const closedLabel =
-    conversation?.closedOn && String(conversation.closedOn).trim()
-      ? `CLOSURE · ${conversation.closedOn}`
-      : 'CLOSURE';
+  const closedLabel = closureCopy.dividerLabel(conversation?.closedOn);
 
   const composerBottomInset = focused ? 8 : insets.bottom + 8;
 
@@ -283,6 +291,7 @@ export default function ChatPage({ navigation, route }: Props) {
       contentContainerStyle={[
         styles.messagesContent,
         messages.length === 0 && !isClosed ? styles.messagesEmpty : null,
+        isClosed ? { paddingBottom: insets.bottom + 16 } : null,
       ]}
       keyboardShouldPersistTaps="handled"
     >
@@ -294,10 +303,20 @@ export default function ChatPage({ navigation, route }: Props) {
             avatarFile={contact.avatarFile}
             size={72}
           />
-          <Text style={typography.chatIntro}>Start your conversation with {contact.name}</Text>
-          <Text style={styles.emptySub}>
-            This is a safe space to express your thoughts and feelings.
-          </Text>
+          <View style={styles.emptyCopyBlock}>
+            <Text
+              style={styles.emptyTitle}
+              numberOfLines={2}
+              ellipsizeMode="tail"
+            >
+              {chatCopy.emptyTitle(contact.name)}
+            </Text>
+            <Text style={styles.emptySubtitle}>{chatCopy.emptySubtitle}</Text>
+          </View>
+          <View style={styles.emptyNotePill}>
+            <Lock size={14} color={colors.accent} strokeWidth={2} />
+            <Text style={styles.emptyNoteText}>{chatCopy.emptyNote}</Text>
+          </View>
         </View>
       ) : (
         <>
@@ -314,11 +333,18 @@ export default function ChatPage({ navigation, route }: Props) {
             />
           ))}
           {isClosed ? (
-            <View style={styles.closureDividerRow}>
-              <View style={hairline} />
-              <Text style={styles.closureDividerText}>{closedLabel}</Text>
-              <View style={hairline} />
-            </View>
+            <>
+              <View style={styles.closureDividerRow}>
+                <View style={hairline} />
+                <Text style={styles.closureDividerText}>{closedLabel}</Text>
+                <View style={hairline} />
+              </View>
+              <ClosureCard
+                contactName={contact.name}
+                onStartNew={handleStartNewAfterClosure}
+                shouldReveal={revealClosureCard}
+              />
+            </>
           ) : null}
         </>
       )}
@@ -353,24 +379,14 @@ export default function ChatPage({ navigation, route }: Props) {
       <View style={hairline} />
 
       {isClosed ? (
-        <>
-          {messageList}
-          <View style={[styles.closedBlock, { paddingBottom: insets.bottom + 8 }]}>
-            <Text style={styles.closedFooter}>This conversation has reached closure.</Text>
-            <Pressable style={styles.newConvoPill} onPress={handleStartNewAfterClosure}>
-              <Text style={styles.newConvoPillText}>
-                Start a new conversation with {contact.name}
-              </Text>
-            </Pressable>
-          </View>
-        </>
+        messageList
       ) : (
         <KeyboardAvoidingView behavior="padding" style={styles.flex}>
           {messageList}
           {showClosureCta ? (
             <Pressable style={styles.closureCta} onPress={() => setSheet('closure')}>
               <HeartCheckIcon size={18} />
-              <Text style={styles.closureCtaText}>Said everything? Find closure</Text>
+              <Text style={styles.closureCtaText}>{closureCopy.closureCta}</Text>
             </Pressable>
           ) : null}
           <View style={[styles.composer, { paddingBottom: composerBottomInset }]}>
@@ -378,7 +394,7 @@ export default function ChatPage({ navigation, route }: Props) {
               style={[styles.input, focused && styles.inputFocused]}
               value={draft}
               onChangeText={setDraft}
-              placeholder="Write what you couldn't say…"
+              placeholder={chatCopy.composerPlaceholder}
               placeholderTextColor={colors.textFaint}
               multiline
               maxLength={2000}
@@ -573,11 +589,44 @@ const styles = StyleSheet.create({
   messages: { flex: 1 },
   messagesContent: { paddingHorizontal: spacing.screen, paddingVertical: spacing.xl },
   messagesEmpty: { flexGrow: 1, justifyContent: 'center' },
-  emptyChat: { alignItems: 'center', gap: spacing.xl, paddingHorizontal: spacing.section },
-  emptySub: {
-    ...typography.preview,
+  emptyChat: { alignItems: 'center', paddingHorizontal: spacing.section },
+  emptyCopyBlock: {
+    alignItems: 'center',
+    marginTop: spacing.xl,
+    alignSelf: 'stretch',
+  },
+  emptyTitle: {
+    fontFamily: fonts.serif,
+    fontSize: 24,
+    lineHeight: 30,
+    color: colors.text,
     textAlign: 'center',
-    lineHeight: 20,
+  },
+  emptySubtitle: {
+    fontFamily: fonts.sans,
+    fontSize: 15,
+    lineHeight: 22.5,
+    color: colors.textMuted,
+    textAlign: 'center',
+    marginTop: spacing.md,
+  },
+  emptyNotePill: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.md,
+    maxWidth: 300,
+    marginTop: spacing.section,
+    backgroundColor: colors.surface1,
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+  },
+  emptyNoteText: {
+    flex: 1,
+    fontFamily: fonts.sans,
+    fontSize: 13,
+    lineHeight: 18.85,
+    color: colors.textFaint,
   },
   closureDividerRow: {
     flexDirection: 'row',
@@ -637,28 +686,5 @@ const styles = StyleSheet.create({
     borderRadius: 25,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  closedBlock: {
-    paddingHorizontal: spacing.screen,
-    paddingTop: spacing.xl,
-    gap: spacing.xl,
-  },
-  closedFooter: {
-    ...typography.preview,
-    textAlign: 'center',
-  },
-  newConvoPill: {
-    minHeight: 44,
-    borderRadius: radii.pill,
-    backgroundColor: colors.surface1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: spacing.xl,
-  },
-  newConvoPillText: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 15,
-    color: colors.accent,
-    textAlign: 'center',
   },
 });

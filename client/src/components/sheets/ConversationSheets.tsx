@@ -15,13 +15,16 @@ import {
   Smartphone,
   Palette,
   XCircle,
+  AlertTriangle,
+  MessageCircle,
 } from 'lucide-react-native';
+import { closureCopy } from '@/copy/closure';
 import { BottomSheet } from '@/components/BottomSheet';
 import { Avatar } from '@/components/Avatar';
 import { EncryptedAvatar } from '@/components/EncryptedAvatar';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { HeartCheckIcon } from '@/components/HeartCheckIcon';
-import { colors, hairline, radii, spacing, typography } from '@/theme';
+import { colors, fonts, hairline, radii, spacing, typography } from '@/theme';
 import type { Contact } from '@/types';
 import { getContactColorIndex } from '@/lib/avatar';
 
@@ -305,18 +308,31 @@ type ClosureProps = BaseProps & {
 
 export function ClosureSheet({ sheet, onClose, targetContact, onConfirm }: ClosureProps) {
   if (!targetContact) return null;
+  const name = targetContact.name;
   return (
     <BottomSheet visible={sheet === 'closure'} onClose={onClose}>
-      <View style={styles.closureIconTile}>
-        <HeartCheckIcon size={28} />
+      <View style={styles.closureSheetBlocks}>
+        <View style={styles.closureIconTile}>
+          <HeartCheckIcon size={28} />
+        </View>
+        <Text style={typography.sheetTitle}>{closureCopy.confirmTitle(name)}</Text>
+        <Text style={styles.closureBody}>{closureCopy.confirmBody}</Text>
+        <View style={styles.closureWarningBox}>
+          <AlertTriangle size={18} color={colors.danger} strokeWidth={2} />
+          <Text style={styles.closureWarningText}>{closureCopy.confirmWarning}</Text>
+        </View>
+        <View style={styles.closureReassuranceRow}>
+          <MessageCircle size={16} color={colors.closure} strokeWidth={2} />
+          <Text style={styles.closureReassuranceText}>
+            {closureCopy.confirmReassurance(name)}
+          </Text>
+        </View>
       </View>
-      <Text style={typography.sheetTitle}>Find closure with {targetContact.name}?</Text>
-      <Text style={[typography.preview, { lineHeight: 21 }]}>
-        Your words stay saved here, but this conversation will be closed for good. This is permanent
-        and can't be undone. You can always start a new conversation with {targetContact.name}{' '}
-        later.
-      </Text>
-      <PrimaryButton label="Mark closure" variant="closure" onPress={onConfirm} />
+      <PrimaryButton
+        label={closureCopy.markClosure}
+        variant="closure"
+        onPress={onConfirm}
+      />
     </BottomSheet>
   );
 }
@@ -435,6 +451,9 @@ const styles = StyleSheet.create({
   indentedHairline: {
     marginLeft: 52,
   },
+  closureSheetBlocks: {
+    gap: spacing.xl,
+  },
   closureIconTile: {
     width: 52,
     height: 52,
@@ -443,5 +462,41 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     alignSelf: 'flex-start',
+  },
+  closureBody: {
+    fontFamily: typography.body.fontFamily,
+    fontSize: 15,
+    lineHeight: 22,
+    color: colors.textMuted,
+  },
+  closureWarningBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.md,
+    backgroundColor: 'rgba(238,142,142,0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(238,142,142,0.30)',
+    borderRadius: radii.input,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+  },
+  closureWarningText: {
+    flex: 1,
+    fontFamily: fonts.sansMedium,
+    fontSize: 14,
+    lineHeight: 20,
+    color: colors.danger,
+  },
+  closureReassuranceRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.md,
+  },
+  closureReassuranceText: {
+    flex: 1,
+    fontFamily: typography.preview.fontFamily,
+    fontSize: 14,
+    lineHeight: 20,
+    color: colors.textMuted,
   },
 });
