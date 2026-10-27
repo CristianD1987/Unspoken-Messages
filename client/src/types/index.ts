@@ -30,7 +30,10 @@ export interface Contact {
   avatar: string;
   color: AvatarColor;
   createdAt: Date;
+  /** @deprecated Legacy cache URI — migrated to `avatarFile`. */
   imageUrl?: string;
+  /** Encrypted avatar filename under documentDirectory/avatars/ */
+  avatarFile?: string;
 }
 
 export interface Message {
@@ -47,6 +50,7 @@ export interface Conversation {
   messageCount: number;
   unreadCount: number;
   isClosed: boolean;
+  closedOn?: string;
   lastMessage?: string;
   lastMessageAt?: Date;
 }
@@ -57,6 +61,10 @@ export interface AppData {
     biometricEnabled: boolean;
     autoDeleteEnabled: boolean;
     autoDeleteDays: number;
+    /** When true, show re-confirm sheet and block auto-delete until cleared. */
+    autoDeleteNeedsReconfirm?: boolean;
+    /** After 10 consecutive wrong unlock PINs, wipe device (requires PIN to enable). */
+    eraseAfterTenFailedAttempts?: boolean;
     onboardingCompleted: boolean;
     totalMessagesSent: number;
     donationIntervalsShown: number[];
@@ -69,14 +77,3 @@ export interface AppData {
   version: string;
 }
 
-export type RootStackParamList = {
-  Intro: undefined;
-  Onboarding: undefined;
-  PinSetup: undefined;
-  PinAuth: undefined;
-  Home: undefined;
-  ContactSelection: undefined;
-  Chat: { contactId: string };
-  Settings: undefined;
-  Terms: undefined;
-};

@@ -1,6 +1,29 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { encrypt, decrypt } from "./encryption";
+import {
+  encrypt,
+  decrypt,
+  tryDecrypt,
+  wipeSecureEncryptionMaterial,
+} from './encryption';
+import { UndecryptableStorageError, type StorageHealth } from './storageErrors';
+import { applyAutoDelete } from './autoDelete';
+import { runPostLaunchMigrations } from './postLaunchMigrations';
+import {
+  deleteAllAvatarFiles,
+  deleteExportTempFiles,
+  packAvatarsForBackup,
+  restoreAvatarsFromBackup,
+  clearAvatarMemoryCache,
+} from './avatars';
 import type { AppData } from '../types';
+import { CURRENT_TERMS_VERSION } from './legalVersion';
+
+export type PasswordBackupPayload = {
+  format: 'unspoken-backup';
+  v: 3;
+  appData: AppData;
+  avatars: Record<string, string>;
+};
 
 export const STORAGE_KEYS = {
   APP_DATA: 'app_data',
@@ -40,28 +63,66 @@ class StorageManager {
     return StorageManager.instance;
   }
 
-  async getItem(key: string): Promise<string | null> {
-    try {
-      const encryptedData = await AsyncStorage.getItem(key);
-      if (!encryptedData) return null;
-      
-      const decryptedData = await decrypt(encryptedData);
-      
-      // Validate that the decrypted data is valid JSON if it starts with { or [
-      if (decryptedData.startsWith('{') || decryptedData.startsWith('[')) {
+  async probeStorageHealth(): Promise<StorageHealth> {
+    const keys = Object.values(STORAGE_KEYS);
+    let anyRaw = false;
+
+    for (const key of keys) {
+      const raw = await AsyncStorage.getItem(key);
+      if (!raw) continue;
+      anyRaw = true;
+      try {
+        await tryDecrypt(raw, false);
+      } catch (e) {
+        if (e instanceof UndecryptableStorageError) {
+          return 'locked';
+        }
+        return 'locked';
+      }
+    }
+
+    const allKeys = await AsyncStorage.getAllKeys();
+    for (const key of allKeys) {
+      if (keys.includes(key as (typeof keys)[number])) continue;
+      if (!key.endsWith('__v2_pending')) continue;
+      const raw = await AsyncStorage.getItem(key);
+      if (!raw) continue;
+      anyRaw = true;
+      if (key.endsWith('__v2_pending')) {
         try {
-          JSON.parse(decryptedData);
-        } catch (error: any) {
-          console.error(`Invalid JSON data for key ${key}:`, error);
-          return null;
+          await tryDecrypt(raw, false);
+        } catch {
+          return 'locked';
         }
       }
-      
-      return decryptedData;
-    } catch (error) {
-      console.error(`Failed to get encrypted data for key ${key}:`, error);
-      return null;
     }
+
+    return anyRaw ? 'ok' : 'fresh';
+  }
+
+  async getItem(key: string): Promise<string | null> {
+    const encryptedData = await AsyncStorage.getItem(key);
+    if (!encryptedData) return null;
+
+    let decryptedData: string;
+    try {
+      decryptedData = await decrypt(encryptedData, { allowKeyCreate: true });
+    } catch (error) {
+      if (error instanceof UndecryptableStorageError) {
+        throw error;
+      }
+      throw new UndecryptableStorageError(key, error);
+    }
+
+    if (decryptedData.startsWith('{') || decryptedData.startsWith('[')) {
+      try {
+        JSON.parse(decryptedData);
+      } catch (error: unknown) {
+        throw new UndecryptableStorageError(key, error);
+      }
+    }
+
+    return decryptedData;
   }
 
   async setItem(key: string, value: string): Promise<void> {
@@ -93,16 +154,15 @@ class StorageManager {
   }
 
   async getAppData(): Promise<AppData | null> {
-    try {
-      const data = await this.getItem(STORAGE_KEYS.APP_DATA);
-      if (!data) return null;
+    const raw = await AsyncStorage.getItem(STORAGE_KEYS.APP_DATA);
+    if (!raw) return null;
 
-      return reviveAppDataDates(JSON.parse(data));
-    } catch (error) {
-      console.warn("⚠️ Corrupted app data detected. Resetting app_data.");
-      await this.removeItem(STORAGE_KEYS.APP_DATA); // sterge datele corupte
-      return null; // intoarce null si aplica fallback in App.tsx
+    const data = await this.getItem(STORAGE_KEYS.APP_DATA);
+    if (!data) {
+      throw new UndecryptableStorageError(STORAGE_KEYS.APP_DATA);
     }
+
+    return reviveAppDataDates(JSON.parse(data));
   }
 
   async setAppData(data: AppData): Promise<void> {
@@ -117,9 +177,42 @@ class StorageManager {
   async clearAllData(): Promise<void> {
     try {
       await AsyncStorage.clear();
+      clearAvatarMemoryCache();
+      await wipeSecureEncryptionMaterial();
     } catch (error) {
       console.error("Error clearing storage:", error);
       throw error;
+    }
+  }
+
+  /**
+   * Factory reset (Forgot PIN). Removes:
+   * - AsyncStorage: all keys (app_data, auth_session, pin_hash, onboarding_complete,
+   *   terms_accepted, any *__v2_pending migration leftovers)
+   * - SecureStore: encryption_key, encryption_migrated_v2, keychain_accessibility_migrated
+   * - Files: documentDirectory/avatars/, cache unspoken-backup.txt
+   */
+  async wipeDeviceAndRestart(): Promise<void> {
+    clearAvatarMemoryCache();
+    await deleteAllAvatarFiles();
+    await deleteExportTempFiles();
+    await AsyncStorage.clear();
+    await wipeSecureEncryptionMaterial();
+  }
+
+  async runPostLaunchMigrations(): Promise<void> {
+    await runPostLaunchMigrations(
+      () => this.getAppData(),
+      (data) => this.setAppData(data)
+    );
+  }
+
+  async runAutoDeleteMaintenance(): Promise<void> {
+    const data = await this.getAppData();
+    if (!data || data.settings.autoDeleteNeedsReconfirm) return;
+    const next = applyAutoDelete(data);
+    if (next !== data) {
+      await this.setAppData(next);
     }
   }
 
@@ -160,13 +253,30 @@ class StorageManager {
     await this.setItem(STORAGE_KEYS.ONBOARDING_COMPLETE, 'true');
   }
 
-  async areTermsAccepted(): Promise<boolean> {
+  async getTermsAcceptedVersion(): Promise<number> {
     const value = await this.getItem(STORAGE_KEYS.TERMS_ACCEPTED);
-    return value === 'true';
+    if (!value) return 0;
+    if (value === 'true') return 1;
+    const parsed = parseInt(value, 10);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  async areTermsAccepted(): Promise<boolean> {
+    const version = await this.getTermsAcceptedVersion();
+    return version >= CURRENT_TERMS_VERSION;
+  }
+
+  async needsTermsReacceptance(): Promise<boolean> {
+    const version = await this.getTermsAcceptedVersion();
+    return version > 0 && version < CURRENT_TERMS_VERSION;
   }
 
   async setTermsAccepted(): Promise<void> {
-    await this.setItem(STORAGE_KEYS.TERMS_ACCEPTED, 'true');
+    await this.setItem(STORAGE_KEYS.TERMS_ACCEPTED, String(CURRENT_TERMS_VERSION));
+  }
+
+  async clearTermsAccepted(): Promise<void> {
+    await this.removeItem(STORAGE_KEYS.TERMS_ACCEPTED);
   }
 
   async exportData(): Promise<string> {
@@ -187,22 +297,37 @@ class StorageManager {
   }
 
   async exportDataWithPassword(password: string): Promise<string> {
-    // Export the current app data as password-encrypted JSON string
     const appData = await this.getAppData();
     if (!appData) throw new Error('No app data to export');
-    const json = JSON.stringify(appData);
-    // Use password-based encryption
+    const avatars = await packAvatarsForBackup(appData.contacts);
+    const payload: PasswordBackupPayload = {
+      format: 'unspoken-backup',
+      v: 3,
+      appData,
+      avatars,
+    };
     const { encryptWithPassword } = await import('./encryption');
-    const encrypted = await encryptWithPassword(json, password);
-    return encrypted;
+    return encryptWithPassword(JSON.stringify(payload), password);
   }
 
   async importDataWithPassword(encryptedData: string, password: string): Promise<void> {
-    // Import app data from a password-encrypted JSON string
     const { decryptWithPassword } = await import('./encryption');
     const decrypted = await decryptWithPassword(encryptedData, password);
-    const appData = JSON.parse(decrypted);
+    const parsed = JSON.parse(decrypted) as PasswordBackupPayload | AppData;
+
+    if ('format' in parsed && parsed.format === 'unspoken-backup' && parsed.v === 3) {
+      await restoreAvatarsFromBackup(parsed.avatars, parsed.appData.contacts);
+      await this.setAppData(parsed.appData);
+      return;
+    }
+
+    const appData = parsed as AppData;
     await this.setAppData(appData);
+    const { migrateAllContactAvatars } = await import('./avatars');
+    const migrated = await migrateAllContactAvatars(appData.contacts);
+    if (migrated.changed) {
+      await this.setAppData({ ...appData, contacts: migrated.contacts });
+    }
   }
 }
 

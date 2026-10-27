@@ -1,95 +1,58 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
-import { format } from "date-fns";
-import { Ionicons } from '@expo/vector-icons';
-import type { Message } from "../types";
+import React from 'react';
+import { View, Text, Pressable, StyleSheet } from 'react-native';
+import { format } from 'date-fns';
+import type { Message } from '../types';
+import { colors, fonts, radii, typography } from '@/theme';
 
 interface MessageBubbleProps {
   message: Message;
-  style?: any;
-  onEdit?: (messageId: string, content: string) => void;
-  onDelete?: (messageId: string) => void;
-  isEditMode?: boolean;
-  isEditing?: boolean;
+  onLongPress?: () => void;
+  disabled?: boolean;
 }
 
-export function MessageBubble({ message, style, onEdit, onDelete, isEditMode = true, isEditing = false }: MessageBubbleProps) {
-  const timeStr = format(new Date(message.timestamp), "h:mm a");
-
-  const handlePress = () => {
-    if (isEditMode && onEdit) {
-      onEdit(message.id, message.content);
-    }
-  };
+export function MessageBubble({ message, onLongPress, disabled }: MessageBubbleProps) {
+  const timeStr = format(new Date(message.timestamp), 'HH:mm');
 
   return (
-    <View style={[styles.container, style]}>
-      <View style={styles.bubbleContainer}>
-        <TouchableOpacity
-          onPress={handlePress}
-          style={[
-            styles.messageBubble,
-            isEditMode && styles.editableBubble,
-            isEditing && { borderWidth: 2, borderColor: '#D49A6A' }
-          ]}
-          activeOpacity={isEditMode ? 0.7 : 1}
-        >
-          <Text style={styles.messageText}>{message.content}</Text>
-          <Text style={styles.messageNote}>
-            (This message was released. It was not sent.)
-          </Text>
-          <View style={styles.messageTail} />
-        </TouchableOpacity>
-        <Text style={styles.timestamp}>{timeStr}</Text>
-      </View>
+    <View style={styles.container}>
+      <Pressable
+        onLongPress={disabled ? undefined : onLongPress}
+        delayLongPress={320}
+        style={styles.bubble}
+      >
+        <Text style={typography.bubble}>{message.content}</Text>
+        <Text style={styles.note}>(This message was released. It was not sent.)</Text>
+      </Pressable>
+      <Text style={styles.timestamp}>{timeStr}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    marginBottom: 16,
-  },
-  bubbleContainer: {
+    alignSelf: 'flex-end',
     maxWidth: '80%',
+    marginBottom: 14,
   },
-  messageBubble: {
-    backgroundColor: '#D49A6A',
-    borderRadius: 16,
-    borderBottomRightRadius: 4,
-    padding: 12,
-    position: 'relative',
+  bubble: {
+    backgroundColor: colors.bubble,
+    borderTopLeftRadius: radii.bubble.topLeft,
+    borderTopRightRadius: radii.bubble.topRight,
+    borderBottomRightRadius: radii.bubble.bottomRight,
+    borderBottomLeftRadius: radii.bubble.bottomLeft,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
   },
-  editableBubble: {
-    opacity: 1,
-  },
-  messageText: {
-    color: '#1E1E1E',
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  messageNote: {
-    color: '#8B5A2B',
+  note: {
+    fontFamily: fonts.sans,
     fontSize: 12,
     fontStyle: 'italic',
-    marginTop: 4,
-  },
-  messageTail: {
-    position: 'absolute',
-    bottom: 0,
-    right: -8,
-    width: 0,
-    height: 0,
-    borderLeftWidth: 8,
-    borderLeftColor: '#D49A6A',
-    borderBottomWidth: 8,
-    borderBottomColor: 'transparent',
+    color: colors.textFaint,
+    marginTop: 6,
   },
   timestamp: {
-    color: '#A0A0A0',
-    fontSize: 12,
+    ...typography.captionSmall,
+    fontSize: 11,
     textAlign: 'right',
     marginTop: 4,
   },
