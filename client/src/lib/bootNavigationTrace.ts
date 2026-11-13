@@ -21,7 +21,8 @@ export function createBootNavigationTracer(
 
   const log = (event: string, detail?: unknown) => {
     if (Date.now() > until) return;
-    const route = navigationRef.getCurrentRoute();
+    // getCurrentRoute() logs an error if called before the container is ready.
+    const route = navigationRef.isReady() ? navigationRef.getCurrentRoute() : undefined;
     console.log(
       `[boot nav] ${event}`,
       route ? { name: route.name, params: route.params } : '(no route)',
