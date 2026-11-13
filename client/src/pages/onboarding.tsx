@@ -22,16 +22,16 @@ const STEPS = [
     sage: false,
   },
   {
-    title: 'Therapeutic Writing',
+    title: 'Expressive Writing',
     description:
-      'Write messages to symbolic contacts — express emotions without expecting responses.',
+      "Write to anyone who matters — someone you lost, someone who left, someone you couldn't answer. No one will ever read it.",
     Icon: Feather,
     sage: false,
   },
   {
-    title: 'Emotional Processing',
+    title: 'Find Closure',
     description:
-      'Organize conversations on your device only — your words stay private and are never sent anywhere.',
+      "When you've said everything, close the conversation. Your words stay, private, on this device.",
     Icon: Heart,
     sage: true,
   },
@@ -79,7 +79,7 @@ export default function OnboardingPage({ navigation }: Props) {
       </View>
 
       <Text style={styles.headerTitle}>Welcome to Your Safe Space</Text>
-      <Text style={styles.headerSub}>Let's set up your therapeutic journey</Text>
+      <Text style={styles.headerSub}>Let's set up your private space</Text>
 
       <Animated.View style={[styles.page, { opacity }]}>
         <View style={[styles.tile, { backgroundColor: tileBg }]}>

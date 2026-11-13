@@ -252,8 +252,10 @@ export default function HomePage({ navigation }: Props) {
         </Pressable>
       </View>
 
-      <Text style={[typography.screenTitle, styles.screenTitle]}>Conversations</Text>
-      <Text style={styles.caption}>Kept only on this device. Never sent.</Text>
+      <View style={styles.heading}>
+        <Text style={[typography.screenTitle, styles.screenTitle]}>Conversations</Text>
+        <Text style={styles.caption}>Kept only on this device. Never sent.</Text>
+      </View>
 
       <ScrollView
         style={styles.list}
@@ -266,7 +268,7 @@ export default function HomePage({ navigation }: Props) {
             </View>
             <Text style={styles.emptyTitle}>No conversations yet</Text>
             <Text style={styles.emptyBody}>
-              Start your therapeutic journey by creating your first conversation.
+              Start by writing to someone you never got to say something to.
             </Text>
             <PrimaryButton
               label="Start new conversation"
@@ -453,13 +455,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  screenTitle: {
+  heading: {
     paddingHorizontal: spacing.screen,
+  },
+  screenTitle: {
     marginBottom: spacing.xs,
   },
   caption: {
     ...typography.caption,
-    paddingHorizontal: spacing.screen,
     marginTop: spacing.xs,
     marginBottom: spacing.xl,
   },

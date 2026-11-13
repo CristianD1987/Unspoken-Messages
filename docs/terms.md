@@ -14,7 +14,7 @@ Unspoken is not a messaging service. Nothing you write is ever sent to anyone.
 
 ## 2. Not a substitute for professional help
 
-Unspoken is a self-help writing tool. It is not therapy, medical advice, or a medical device, and it does not diagnose or treat any condition.
+Unspoken is a personal writing space. It is not a substitute for professional support, medical advice, or a medical device, and it does not diagnose or treat any condition.
 
 If you are struggling, please reach out to a qualified mental health professional. **If you are in crisis or thinking about harming yourself, contact your local emergency number (112 in the EU) or a crisis helpline in your country right away.**
 

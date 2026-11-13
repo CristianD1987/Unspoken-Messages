@@ -236,12 +236,11 @@ export default function SettingsPage({ navigation }: Props) {
 
         <Text style={styles.sectionLabel}>ABOUT</Text>
         <View style={styles.card}>
-          <Text style={typography.cardTitle}>Therapeutic benefits</Text>
+          <Text style={typography.cardTitle}>Why expressive writing</Text>
           <Text style={styles.aboutBody}>
-            Everything you write stays encrypted on this device. Unspoken does not collect or send
-            your data. Unspoken offers a safe space for emotional expression, helping you process thoughts and
-            feelings through therapeutic writing. Messages remain private, supporting your mental
-            wellness journey without pressure or judgment.
+            Putting unspoken thoughts into words can help you understand them and let them go. Unspoken
+            gives you a private place to do that — nothing is shared, nothing is judged. It's a personal
+            writing space, not a substitute for professional support.
           </Text>
           <View style={[hairline, styles.cardHairline]} />
           <Pressable style={styles.linkRow} onPress={() => setCrisisOpen(true)}>

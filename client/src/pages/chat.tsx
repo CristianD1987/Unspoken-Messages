@@ -48,7 +48,7 @@ import {
   DeleteConversationSheet,
 } from '@/components/sheets/MessageSheets';
 import type { AvatarColor } from '@/types';
-import { colors, fonts, hairline, radii, spacing, typography } from '@/theme';
+import { colors, fonts, hairline, spacing, typography } from '@/theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Chat'>;
 
@@ -400,6 +400,7 @@ export default function ChatPage({ navigation, route }: Props) {
               placeholder={chatCopy.composerPlaceholder}
               placeholderTextColor={colors.textFaint}
               multiline
+              textAlignVertical="top"
               maxLength={2000}
               onFocus={() => {
                 setFocused(true);
@@ -669,16 +670,16 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     minHeight: 50,
-    maxHeight: 120,
+    maxHeight: 132,
     backgroundColor: colors.surface1,
-    borderRadius: radii.pill,
+    borderRadius: 25,
     borderWidth: 1,
     borderColor: colors.border,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: 14,
-    color: colors.text,
-    fontFamily: fonts.sans,
-    fontSize: 15.5,
+    paddingHorizontal: 20,
+    paddingTop: 13,
+    paddingBottom: 13,
+    overflow: 'hidden',
+    ...typography.bubble,
   },
   inputFocused: {
     borderColor: colors.accent,

@@ -43,9 +43,9 @@ export default function IntroPage({ navigation }: Props) {
           <MessageCircle size={32} color={colors.accent} strokeWidth={1.6} />
         </View>
         <Text style={styles.title}>Unspoken</Text>
-        <Text style={styles.subtitle}>A therapeutic space for your thoughts</Text>
+        <Text style={styles.subtitle}>A space for expressive writing</Text>
         <Text style={styles.body}>
-          Express your deepest thoughts in a secure, private environment designed for emotional healing.
+          Write to anyone, as if you were messaging them. Nothing is ever sent.
         </Text>
       </View>
 
