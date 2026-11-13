@@ -1,6 +1,6 @@
 # Privacy Policy
 
-Last updated: October 27, 2026
+Last updated: November 13, 2026
 
 Unspoken is provided by FOFENSOFT S.R.L. (CUI 47274231), Voluntari, Ilfov, Romania. Contact: office@fofensoft.com.
 
@@ -41,9 +41,9 @@ You can change these permissions at any time in your device settings.
 
 You can export a backup from Settings. The backup file is encrypted with a password you choose, and you decide where to save or share it. We never receive your backups and cannot open them or recover your password.
 
-## Links outside the app
+## Tips
 
-If you choose to support the app, a Buy Me a Coffee page opens in your browser. That service is governed by its own privacy policy. Nothing from the app is shared with it.
+If you choose to leave a tip, the payment is handled entirely by the Apple App Store or Google Play. We don't receive your name, email or payment details, and nothing you write in the app is shared with the store.
 
 ## Information from app stores
 

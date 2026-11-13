@@ -72,7 +72,8 @@
       ],
       "expo-secure-store",
       "expo-asset",
-      "expo-font"
+      "expo-font",
+      "expo-iap"
     ],
     "extra": {
       "eas": {

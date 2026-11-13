@@ -5,7 +5,6 @@ import {
   Pressable,
   StyleSheet,
   ScrollView,
-  Linking,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -14,7 +13,7 @@ import {
   ChevronRight,
   Download,
   Upload,
-  Coffee,
+  Heart,
 } from 'lucide-react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
@@ -28,6 +27,8 @@ import { PrimaryButton } from '@/components/PrimaryButton';
 import { ExportBackupSheet, ImportBackupSheet } from '@/components/sheets/BackupSheets';
 import { AutoDeleteConfirmSheet } from '@/components/sheets/AutoDeleteConfirmSheet';
 import { CrisisSupportSheet } from '@/components/sheets/CrisisSupportSheet';
+import { TipJarSheet } from '@/components/tip-jar-sheet';
+import { useTipJar } from '@/components/TipJarProvider';
 import { useHardwareBack } from '@/hooks/useHardwareBack';
 import { seedLegacyAppData } from '@/lib/devLegacySeed';
 import { colors, fonts, hairline, radii, spacing, typography } from '@/theme';
@@ -47,9 +48,16 @@ export default function SettingsPage({ navigation }: Props) {
   const [devTapCount, setDevTapCount] = useState(0);
   const [autoDeleteConfirmOpen, setAutoDeleteConfirmOpen] = useState(false);
   const [crisisOpen, setCrisisOpen] = useState(false);
+  const [tipJarOpen, setTipJarOpen] = useState(false);
+  const { available: tipsAvailable } = useTipJar();
+  const closeTipJar = useCallback(() => setTipJarOpen(false), []);
 
   useHardwareBack(
     useCallback(() => {
+      if (tipJarOpen) {
+        setTipJarOpen(false);
+        return true;
+      }
       if (exportOpen) {
         setExportOpen(false);
         return true;
@@ -61,7 +69,7 @@ export default function SettingsPage({ navigation }: Props) {
         return true;
       }
       return false;
-    }, [exportOpen, importOpen])
+    }, [tipJarOpen, exportOpen, importOpen])
   );
 
   const startImport = async () => {
@@ -261,22 +269,25 @@ export default function SettingsPage({ navigation }: Props) {
           </Pressable>
         </View>
 
-        <View style={styles.supportCard}>
-          <Text style={styles.supportTitle}>Support & development</Text>
-          <Text style={styles.supportBody}>
-            If you find Unspoken helpful, consider supporting its development. Your feedback and
-            support help us grow!
-          </Text>
-          <PrimaryButton
-            label="Support Unspoken"
-            onPress={() => Linking.openURL('https://buymeacoffee.com/unspokendonations')}
-            icon={<Coffee size={18} color={colors.accentInk} strokeWidth={1.6} />}
-            style={{ marginTop: spacing.xl }}
-          />
-        </View>
+        {tipsAvailable ? (
+          <View style={styles.supportCard}>
+            <Text style={styles.supportTitle}>Support Unspoken</Text>
+            <Text style={styles.supportBody}>
+              Unspoken is free. If it helped you, you can leave an optional tip. Tips don't unlock
+              anything.
+            </Text>
+            <PrimaryButton
+              label="Leave a tip"
+              onPress={() => setTipJarOpen(true)}
+              icon={<Heart size={18} color={colors.accentInk} strokeWidth={1.6} />}
+              style={{ marginTop: spacing.xl }}
+            />
+          </View>
+        ) : null}
       </ScrollView>
 
       <CrisisSupportSheet visible={crisisOpen} onClose={() => setCrisisOpen(false)} />
+      <TipJarSheet isOpen={tipJarOpen} onClose={closeTipJar} />
 
       <ExportBackupSheet
         visible={exportOpen}

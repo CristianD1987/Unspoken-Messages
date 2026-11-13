@@ -1,6 +1,6 @@
 # Terms of Use
 
-Last updated: October 27, 2026
+Last updated: November 13, 2026
 
 These Terms apply to the Unspoken app ("Unspoken", "the app"), provided by FOFENSOFT S.R.L., Voluntari, Ilfov, Romania ("we", "us"). Contact: office@fofensoft.com.
 
@@ -40,9 +40,9 @@ Use Unspoken for lawful, personal purposes. Don't attempt to reverse engineer, m
 
 What you write belongs to you. We never see it and claim no rights over it.
 
-## 7. Donations
+## 7. Tips
 
-Donations are voluntary and don't unlock any features. They are handled entirely by Buy Me a Coffee, under its own terms and privacy policy, outside the app. Nothing you write in Unspoken is linked to a donation. Donations are generally non-refundable, except where applicable law gives you a right to a refund.
+Tips are optional, one-time in-app purchases. They don't unlock any features or content. Payment is handled by the Apple App Store or Google Play, under their terms, and we don't receive your payment details. Nothing you write in Unspoken is linked to a tip. Refunds follow the rules of the store you paid through and applicable law.
 
 ## 8. Age
 

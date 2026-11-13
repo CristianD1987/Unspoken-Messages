@@ -17,7 +17,8 @@ import * as ImagePicker from 'expo-image-picker';
 import { format } from 'date-fns';
 import { RootStackParamList } from '../types/navigation';
 import { MessageBubble } from '@/components/message-bubble';
-import { DonationModal } from '@/components/donation-modal';
+import { TipJarSheet } from '@/components/tip-jar-sheet';
+import { useTipJar } from '@/components/TipJarProvider';
 import { useAppData } from '@/hooks/use-storage';
 import { useAppToast } from '@/components/AppToast';
 import { auth } from '@/lib/auth';
@@ -121,10 +122,13 @@ export default function ChatPage({ navigation, route }: Props) {
     scrollToLatest(true);
   }, [messages, isClosed, scrollToLatest]);
 
+  const { available: tipsAvailable } = useTipJar();
   useEffect(() => {
+    // Only prompt when the store actually offers tips; otherwise the prompt waits.
+    if (!tipsAvailable) return;
     const { show } = shouldShowDonationModal();
     if (show) setDonationModalOpen(true);
-  }, [data?.settings.totalMessagesSent, shouldShowDonationModal]);
+  }, [data?.settings.totalMessagesSent, shouldShowDonationModal, tipsAvailable]);
 
   const handleSend = async () => {
     const text = draft.trim();
@@ -146,6 +150,11 @@ export default function ChatPage({ navigation, route }: Props) {
     !isClosed && messages.length > 0 && !draft.trim();
 
   const closeSheet = () => setSheet(null);
+
+  const closeTipJar = useCallback(() => {
+    setDonationModalOpen(false);
+    markDonationPromptShown();
+  }, [markDonationPromptShown]);
 
   useHardwareBack(
     useCallback(() => {
@@ -535,14 +544,7 @@ export default function ChatPage({ navigation, route }: Props) {
         }}
       />
 
-      <DonationModal
-        isOpen={donationModalOpen}
-        onClose={() => {
-          setDonationModalOpen(false);
-          markDonationPromptShown();
-        }}
-        messageCount={data?.settings.totalMessagesSent || 0}
-      />
+      <TipJarSheet isOpen={donationModalOpen} onClose={closeTipJar} />
     </View>
   );
 }

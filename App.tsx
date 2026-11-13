@@ -30,6 +30,7 @@ import { auth } from './client/src/lib/auth';
 import { navigationRef, resetAfterSessionEnded } from './client/src/lib/navigationRef';
 import { createBootNavigationTracer } from './client/src/lib/bootNavigationTrace';
 import { ToastProvider } from './client/src/components/AppToast';
+import { TipJarProvider } from './client/src/components/TipJarProvider';
 import { AppPrivacyCover } from './client/src/components/AppPrivacyCover';
 import { BootErrorScreen } from './client/src/components/BootErrorScreen';
 import { RootNavigator } from './client/src/navigation/RootNavigator';
@@ -168,6 +169,7 @@ export default function App() {
     <KeyboardProvider>
       <SafeAreaProvider>
         <ToastProvider>
+          <TipJarProvider>
           <NavigationContainer
             key={bootAttempt}
             ref={navigationRef}
@@ -180,6 +182,7 @@ export default function App() {
               <AppPrivacyCover visible={privacyCoverVisible} />
             </View>
           </NavigationContainer>
+          </TipJarProvider>
           <StatusBar style="light" backgroundColor={colors.bg} />
         </ToastProvider>
       </SafeAreaProvider>
