@@ -20,6 +20,20 @@ config.transformer = {
   },
 };
 
+// Native build output (Xcode Swift Package checkouts, Gradle build dirs) can contain
+// copies of npm packages, e.g. the OpenIAP checkout ships its own `expo-iap/package.json`.
+// Metro must never resolve modules from there.
+const nativeBuildDirs = [
+  /[\\/]ios[\\/]build[\\/].*/,
+  /[\\/]ios[\\/]Pods[\\/].*/,
+  /[\\/]android[\\/](app[\\/])?build[\\/].*/,
+];
+const existingBlockList = resolver.blockList
+  ? Array.isArray(resolver.blockList)
+    ? resolver.blockList
+    : [resolver.blockList]
+  : [];
+
 config.resolver = {
   ...resolver,
   extraNodeModules: {
@@ -27,7 +41,9 @@ config.resolver = {
     '@assets': path.resolve(__dirname, './assets'),
   },
   useWatchman: true,
-  enableGlobalPackages: true,
+  // Global (Haste-style) packages let any package.json in the project shadow node_modules.
+  enableGlobalPackages: false,
+  blockList: [...existingBlockList, ...nativeBuildDirs],
 };
 
 config.maxWorkers = 4;
